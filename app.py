@@ -4,10 +4,8 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av, tempfile, os, time, uuid
 
 # --- FIX 1: API KEY CORRECT GA READ CHEY ---
-try:
-    API_KEY = st.secrets["sk_qs0b7dwd_HUcG1cwlTXvWxhdjRpoG0VSZ"]
-except:
-    API_KEY = "sk_qs0b7dwd_HUcG1cwlTXvWxhdjRpoG0VSZ"  # Direct backup
+
+API_KEY = st.secrets["SARVAM_API_KEY"]
 
 client = SarvamAI(api_subscription_key=API_KEY) if API_KEY else None
 
