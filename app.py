@@ -3,7 +3,12 @@ from sarvamai import SarvamAI
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av, tempfile, os, time, uuid
 
-API_KEY = st.secrets["sk_qs0b7dwd_HUcG1cwlTXvWxhdjRpoG0VSZ"] if "sk_qs0b7dwd_HUcG1cwlTXvWxhdjRpoG0VSZ" in st.secrets else ""
+# --- FIX 1: API KEY CORRECT GA READ CHEY ---
+try:
+    API_KEY = st.secrets["sk_qs0b7dwd_HUcG1cwlTXvWxhdjRpoG0VSZ"]
+except:
+    API_KEY = "sk_qs0b7dwd_HUcG1cwlTXvWxhdjRpoG0VSZ"  # Direct backup
+
 client = SarvamAI(api_subscription_key=API_KEY) if API_KEY else None
 
 LANG_MAP = {"Hindi":"hi-IN","Telugu":"te-IN","Tamil":"ta-IN","English":"en-IN","Kannada":"kn-IN","Malayalam":"ml-IN"}
@@ -18,7 +23,6 @@ if "hold" not in st.session_state: st.session_state.hold = False
 if "page" not in st.session_state: st.session_state.page = "call"
 if "notes" not in st.session_state: st.session_state.notes = ""
 
-# --- PASSWORD SCREEN ---
 if not st.session_state.auth:
     st.markdown("<h2 style='text-align:center'>📞 Anand Live Translator</h2><p style='text-align:center'>FREE Real Call</p>", unsafe_allow_html=True)
     pwd = st.text_input("Password (1234)", type="password")
@@ -29,7 +33,6 @@ if not st.session_state.auth:
         else: st.error("Wrong!")
     st.stop()
 
-# --- HOLD ---
 if st.session_state.hold:
     st.markdown("<div style='background:#111;color:white;text-align:center;padding:80px;border-radius:30px;'><h1>⏸️ Call on Hold</h1><p>Anand Live Translator</p></div>", unsafe_allow_html=True)
     if st.button("▶️ Resume", use_container_width=True, type="primary"):
@@ -37,7 +40,6 @@ if st.session_state.hold:
         st.rerun()
     st.stop()
 
-# --- ROOM JOIN / CREATE (FREE NUMBER LA) ---
 if not st.session_state.room:
     st.markdown("""
     <div style='background: linear-gradient(180deg, #4facfe 0%, #1a237e 100%); border-radius:30px; padding:30px; color:white; text-align:center;'>
@@ -61,7 +63,6 @@ if not st.session_state.room:
     st.info("Tip: Create chesi, aa Room Code ni friend ki pampu - Vaadu join ayithe REAL call start!")
     st.stop()
 
-# --- MAIN CALL SCREEN (NEE SCREENSHOT LA) ---
 st.markdown(f"""
 <div style='background: linear-gradient(180deg, #4facfe 0%, #1a237e 100%); border-radius:30px; padding:20px; color:white; text-align:center;'>
     <h3>Anand - Live Translator</h3>
@@ -70,13 +71,12 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.write("")
-# --- REAL BUTTONS ---
 c1,c2,c3 = st.columns(3)
 with c1:
     if st.button("📝", use_container_width=True): st.session_state.page = "notes" if st.session_state.page!="notes" else "call"
     st.caption("Notes")
 with c2:
-    if st.button("➕", use_container_width=True): st.toast(f"Share this code: {st.session_state.room} - Friend join avvali")
+    if st.button("➕", use_container_width=True): st.toast(f"Share this code: {st.session_state.room}")
     st.caption("Add call")
 with c3:
     if st.button("🔇" if not st.session_state.mute else "🎙️", use_container_width=True): st.session_state.mute = not st.session_state.mute
@@ -98,29 +98,25 @@ with b2:
     if st.button("📞", use_container_width=True, type="primary"):
         st.session_state.room=None
         st.session_state.auth=False
-        st.success("Call Ended - Restarting to Password...")
+        st.success("Call Ended")
         time.sleep(1)
         st.rerun()
 
 st.divider()
 
-# --- NOTES PAGE LOGIC ---
 if st.session_state.page == "notes":
     st.markdown("### 📝 Notes")
     st.session_state.notes = st.text_area("Notes:", value=st.session_state.notes, height=120)
     if st.button("⬅️ Back to Call"): st.session_state.page="call"; st.rerun()
     st.stop()
 
-# --- FREE REAL CALL + TRANSLATOR ---
 st.markdown("### 🌏 FREE Live Translator - Real Call")
 target = st.selectbox("Neeku ye bhasha lo vinipinchali?", list(LANG_MAP.keys()), index=1)
 tgt_code = LANG_MAP[target]
 
-st.success(f"Room: {st.session_state.room} - Ee code unna evaraina join ayithe call start! Link share chey")
+st.success(f"Room: {st.session_state.room} - Ee code unna evaraina join ayithe call start!")
 
-# WebRTC Audio - REAL Phone la
 def audio_callback(frame: av.AudioFrame):
-    # Mute ayithe emi cheyoddu
     if st.session_state.mute:
         return frame
     return frame
@@ -135,30 +131,30 @@ webrtc_ctx = webrtc_streamer(
 )
 
 st.markdown("#### 🎤 Live Translation")
-st.caption("Matladu - 3 sec lo auto translate ayyi kindha kanipistundi. Mute nokkithe aagipotundi.")
+st.caption("Matladu - 3 sec lo auto translate")
 
-# Manual backup - audio_input kuda pettam
-audio = st.audio_input("Leda ikkada record chey (Caller voice)")
+if not client:
+    st.error("API Key missing - Streamlit secrets lo SARVAM_API_KEY add chey")
+else:
+    audio = st.audio_input("Leda ikkada record chey (Caller voice)")
+    if audio and not st.session_state.mute:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp.write(audio.getvalue())
+            path = tmp.name
+        try:
+            with st.spinner(f"Translating to {target}..."):
+                with open(path, "rb") as f:
+                    stt = client.speech_to_text.transcribe(file=f, model="saarika:v2.5", language_code="unknown")
+                st.info(f"Caller ({stt.language_code}): {stt.transcript}")
+                trans = client.text.translate(input=stt.transcript, source_language_code=stt.language_code, target_language_code=tgt_code, model="mayura:v1")
+                st.success(f"You ({target}): {trans.translated_text}")
+                tts = client.text_to_speech.convert(language_code=tgt_code, text=trans.translated_text, model="bulbul:v3", speaker="kavya")
+                from sarvamai.play import save
+                save(tts, "out.wav")
+                st.audio("out.wav", autoplay=True)
+        except Exception as e:
+            st.error(str(e))
+        finally:
+            if os.path.exists(path): os.remove(path)
 
-if audio and not st.session_state.mute:
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        tmp.write(audio.getvalue())
-        path = tmp.name
-    try:
-        with st.spinner(f"Translating to {target}..."):
-            with open(path, "rb") as f:
-                stt = client.speech_to_text.transcribe(file=f, model="saarika:v2.5", language_code="unknown")
-            st.info(f"Caller ({stt.language_code}): {stt.transcript}")
-            trans = client.text.translate(input=stt.transcript, source_language_code=stt.language_code, target_language_code=tgt_code, model="mayura:v1")
-            st.success(f"You ({target}): {trans.translated_text}")
-            tts = client.text_to_speech.convert(language_code=tgt_code, text=trans.translated_text, model="bulbul:v3", speaker="kavya")
-            from sarvamai.play import save
-            save(tts, "out.wav")
-            st.audio("out.wav", autoplay=True)
-    except Exception as e:
-        st.error(str(e))
-    finally:
-        if os.path.exists(path): os.remove(path)
-
-st.write("")
-st.caption(f"📋 Call Info: Room {st.session_state.room} | End nokkithe password screen ki veltundi")
+st.caption(f"📋 Call Info: Room {st.session_state.room}")
