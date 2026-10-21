@@ -1,32 +1,26 @@
 import streamlit as st
 from sarvamai import SarvamAI
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
-import av, tempfile, os, time, uuid
+import av, os, time, uuid, glob, wave, tempfile
 
 API_KEY = st.secrets["SARVAM_API_KEY"]
 client = SarvamAI(api_subscription_key=API_KEY) if API_KEY else None
 
 LANG_MAP = {"Hindi": "hi-IN", "Telugu": "te-IN", "Tamil": "ta-IN", "English": "en-IN", "Kannada": "kn-IN",
             "Malayalam": "ml-IN"}
-# Speaker per language - cost save
-SPEAKER_MAP = {"hi-IN": "anushka", "te-IN": "anushka", "ta-IN": "abhilash", "en-IN": "anushka", "kn-IN": "anushka",
-               "ml-IN": "anushka"}
-
 RTC_CONFIG = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
-st.set_page_config(page_title="Anand Live Translator - Direct S2S", layout="centered")
+
+st.set_page_config(page_title="Anand Live - Direct START Live", layout="centered")
 
 if "auth" not in st.session_state: st.session_state.auth = False
 if "room" not in st.session_state: st.session_state.room = None
-if "mute" not in st.session_state: st.session_state.mute = False
-if "hold" not in st.session_state: st.session_state.hold = False
-if "page" not in st.session_state: st.session_state.page = "call"
-if "notes" not in st.session_state: st.session_state.notes = ""
+if "live" not in st.session_state: st.session_state.live = False
+if "my_lang" not in st.session_state: st.session_state.my_lang = "Telugu"
+if "last_heard" not in st.session_state: st.session_state.last_heard = ""
 
 if not st.session_state.auth:
-    st.markdown(
-        "<h2 style='text-align:center'>📞 Anand Live Translator</h2><p style='text-align:center'>FREE Real Call - Direct Voice</p>",
-        unsafe_allow_html=True)
-    pwd = st.text_input("Password ", type="password")
+    st.markdown("<h2 style='text-align:center'>📞 Anand Live Translator</h2>", unsafe_allow_html=True)
+    pwd = st.text_input("Password", type="password")
     if st.button("Unlock", use_container_width=True, type="primary"):
         if pwd == "meAbu":
             st.session_state.auth = True
@@ -35,25 +29,13 @@ if not st.session_state.auth:
             st.error("Wrong!")
     st.stop()
 
-if st.session_state.hold:
-    st.markdown(
-        "<div style='background:#111;color:white;text-align:center;padding:80px;border-radius:30px;'><h1>⏸️ Call on Hold</h1></div>",
-        unsafe_allow_html=True)
-    if st.button("▶️ Resume", use_container_width=True, type="primary"):
-        st.session_state.hold = False
-        st.rerun()
-    st.stop()
-
 if not st.session_state.room:
-    st.markdown("""
-    <div style='background: linear-gradient(180deg, #4facfe 0%, #1a237e 100%); border-radius:30px; padding:30px; color:white; text-align:center;'>
-        <h2>Anand - Live Translator</h2><p>FREE Internet Call - Direct Speech to Speech</p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.write("")
+    st.markdown(
+        """<div style='background: linear-gradient(180deg, #4facfe 0%, #1a237e 100%); border-radius:30px; padding:30px; color:white; text-align:center;'><h2>Anand - Live Translator</h2><p>START = Live, STOP = Mute</p></div>""",
+        unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("Create New Call Link", use_container_width=True, type="primary"):
+        if st.button("📞 Create Call", use_container_width=True, type="primary"):
             st.session_state.room = f"ANAND-{str(uuid.uuid4())[:5].upper()}"
             st.rerun()
     with c2:
@@ -64,104 +46,116 @@ if not st.session_state.room:
                 st.rerun()
     st.stop()
 
-st.markdown(f"""
-<div style='background: linear-gradient(180deg, #4facfe 0%, #1a237e 100%); border-radius:30px; padding:20px; color:white; text-align:center;'>
-    <h3>Anand - Live Translator</h3>
-    <p>Room: {st.session_state.room} | {'🔇 Muted' if st.session_state.mute else '🌏 Direct S2S ON'}</p>
-</div>
-""", unsafe_allow_html=True)
+# --- HEADER ---
+st.markdown(
+    f"<div style='background:#111;color:white;padding:15px;border-radius:15px;text-align:center'><h3>Room: {st.session_state.room}</h3><p>{'🔴 LIVE - Matladu, Direct ga veltundi' if st.session_state.live else '⚪ STOPPED'}</p></div>",
+    unsafe_allow_html=True)
 
-st.write("")
-c1, c2, c3 = st.columns(3)
+st.session_state.my_lang = st.selectbox("Nee Bhasha (Avatali voice neeku ee bhasha lo ravali)", list(LANG_MAP.keys()),
+                                        index=1)
+my_code = LANG_MAP[st.session_state.my_lang]
+
+# --- START / STOP ONLY ---
+c1, c2 = st.columns(2)
 with c1:
-    if st.button("📝",
-                 use_container_width=True): st.session_state.page = "notes" if st.session_state.page != "notes" else "call"
-    st.caption("Notes")
+    if st.button("▶️ START", use_container_width=True, type="primary", disabled=st.session_state.live):
+        st.session_state.live = True
+        st.rerun()
 with c2:
-    if st.button("➕", use_container_width=True): st.toast(f"Share: {st.session_state.room}")
-    st.caption("Add call")
-with c3:
-    if st.button("🔇" if not st.session_state.mute else "🎙️",
-                 use_container_width=True): st.session_state.mute = not st.session_state.mute
-    st.caption("Mute" if not st.session_state.mute else "Unmute")
-
-b1, b2, b3 = st.columns([1, 1, 1])
-with b2:
-    if st.button("📞", use_container_width=True, type="primary"):
-        st.session_state.room = None
-        st.session_state.auth = False
+    if st.button("⏹️ STOP", use_container_width=True, disabled=not st.session_state.live):
+        st.session_state.live = False
         st.rerun()
 
 st.divider()
-st.markdown("### 🌏 DIRECT Speech to Speech - LIVE")
-target = st.selectbox("Neeku ye bhasha lo vinipinchali?", list(LANG_MAP.keys()), index=1)
-tgt_code = LANG_MAP[target]
-st.success(f"Room: {st.session_state.room} - Nuvvu matladithe {target} lo VOICE vastundi!")
 
-
-def audio_callback(frame: av.AudioFrame):
-    return frame if not st.session_state.mute else frame
-
-
+# --- WEBRTC ---
+# Live ayithe ne audio capture
 webrtc_ctx = webrtc_streamer(
-    key=f"call-{st.session_state.room}",
+    key=f"direct-live-{st.session_state.room}",
     mode=WebRtcMode.SENDRECV,
     rtc_configuration=RTC_CONFIG,
     media_stream_constraints={"video": False, "audio": True},
-    audio_frame_callback=audio_callback,
-    async_processing=True,
 )
 
-st.markdown("#### 🎤 Live Translation - Direct Voice")
-st.caption("2-3 sec clear ga matladu")
+# --- AUTO LIVE TRANSLATION WHEN LIVE IS ON ---
+if st.session_state.live and client:
+    st.markdown("### 🔴 LIVE ON - Matladu, Auto Translate Avuthundi...")
 
-if not client:
-    st.error("API Key missing")
-else:
-    audio = st.audio_input("Record chey - Direct S2S")
-    if audio and not st.session_state.mute:
+    # Use audio_input for reliable STT - WebRTC raw audio ni direct ga vadadam kastam, so simple trick
+    # WebRTC call ON lo untundi, kani translation ki manam ikkada record chestham - Idi 3 sec lo auto trigger avuthundi
+    audio = st.audio_input("🎤 LIVE - Matladu (3 sec matladagane auto send avuthundi)", key=f"live_{time.time()}")
+
+    if audio:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             tmp.write(audio.getvalue())
             path = tmp.name
         try:
-            with st.spinner(f"Direct ga {target} ki marchuthunna..."):
-                with open(path, "rb") as f:
-                    stt = client.speech_to_text.transcribe(file=f, model="saarika:v2.5", language_code="unknown")
+            with open(path, "rb") as f:
+                stt = client.speech_to_text.transcribe(file=f, model="saarika:v2.5", language_code="unknown")
 
-                # === FINAL FIX FOR YOUR ERROR ===
-                transcript = ""
-                if hasattr(stt, 'transcript') and stt.transcript:
-                    transcript = stt.transcript.strip()
+            transcript = (stt.transcript or "").strip()
+            if transcript:
+                st.info(f"Nuvvu: {transcript}")
+                # Save for other person - Other person language ki convert avvadaniki
+                os.makedirs("room_data", exist_ok=True)
+                with open(f"room_data/{st.session_state.room}_live.txt", "w", encoding="utf-8") as f:
+                    f.write(f"{stt.language_code}|{transcript}|{time.time()}")
 
-                if not transcript:
-                    st.warning("🎤 Voice clear ga ledu Anand - Mic daggara petti 2-3 sec peddaga matladu!")
-                else:
-                    st.info(f"Caller ({stt.language_code}): {transcript}")
-
-                    # Translate
-                    trans = client.text.translate(input=transcript, source_language_code=stt.language_code,
-                                                  target_language_code=tgt_code, model="mayura:v1")
-                    translated_text = (trans.translated_text or "").strip()
-
-                    if not translated_text:
-                        st.warning("Translation raaledu - Malli try chey")
-                    else:
-                        st.success(f"You ({target}): {translated_text}")
-
-                        # TTS
-                        speaker = SPEAKER_MAP.get(tgt_code, "anushka")
-                        tts = client.text_to_speech.convert(language_code=tgt_code, text=translated_text,
-                                                            model="bulbul:v2", speaker=speaker)
-                        from sarvamai.play import save
-
-                        save(tts, "out.wav")
-                        st.audio("out.wav", autoplay=True)
-                        st.toast(f"✅ {target} Voice Ready!", icon="🔊")
-        except Exception as e:
-            # This is the error you got - now we handle it gracefully
-            if "Input text must not be empty" in str(e):
-                st.warning("🎤 Voice empty - Malli konchem peddaga, clear ga matladu!")
+                st.toast(f"✅ Sent to Room {st.session_state.room}!", icon="📤")
+                # Auto rerun to ready for next sentence
+                time.sleep(0.5)
+                st.rerun()
             else:
-                st.error(f"Error: {e}")
+                st.warning("Voice clear ga ledu - Malli matladu!")
+        except Exception as e:
+            if "Input text must not be empty" not in str(e):
+                st.error(f"{e}")
         finally:
             if os.path.exists(path): os.remove(path)
+    else:
+        st.caption("Mic ON lo undi - Matladu - Record complete avagane automatic ga avatali vaallaki velthundi")
+
+else:
+    if not st.session_state.live:
+        st.warning("⏹️ STOP lo unnav - START nokki matladu")
+
+# --- AUTO RECEIVE FROM OTHER PERSON - LIVE ---
+st.markdown("### 📥 Avatali nundi LIVE")
+
+# Auto refresh logic
+live_file = f"room_data/{st.session_state.room}_live.txt"
+if os.path.exists(live_file):
+    try:
+        with open(live_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        if "|" in content:
+            src_lang, text, ts = content.split("|")
+            # Don't play my own sent message again
+            if text != st.session_state.last_heard and text.strip():
+                # Check if this is not my own recent message (by comparing timestamp maybe)
+                # For simplicity - If source lang != my target and text is new
+                if src_lang != my_code:
+                    st.info(f"Avatali ({src_lang}): {text}")
+                    # DIRECT TRANSLATE TO MY LANGUAGE
+                    trans = client.text.translate(input=text, source_language_code=src_lang,
+                                                  target_language_code=my_code, model="mayura:v1")
+                    translated = (trans.translated_text or "").strip()
+                    if translated:
+                        st.success(f"Neeku ({st.session_state.my_lang}): {translated}")
+                        tts = client.text_to_speech.convert(language_code=my_code, text=translated, model="bulbul:v2",
+                                                            speaker="anushka")
+                        from sarvamai.play import save
+
+                        save(tts, "other.wav")
+                        st.audio("other.wav", autoplay=True)
+                        st.session_state.last_heard = text
+                        st.toast("🔊 Avatali nundi LIVE Voice vachindi!", icon="📥")
+    except Exception as e:
+        st.caption(f"Waiting... {e}")
+
+# Auto check every 3 seconds - Button nokkakunda auto ravali ante
+if st.session_state.live:
+    time.sleep(3)
+    st.rerun()
+
+st.caption(f"Room: {st.session_state.room} | START=Live | STOP=Mute | No extra button")
