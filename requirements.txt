@@ -1,0 +1,5 @@
+streamlit
+streamlit-webrtc==0.47.1
+aiortc
+av
+sarvamai
