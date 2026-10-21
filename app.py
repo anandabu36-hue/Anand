@@ -23,9 +23,9 @@ if "notes" not in st.session_state: st.session_state.notes = ""
 
 if not st.session_state.auth:
     st.markdown("<h2 style='text-align:center'>📞 Anand Live Translator</h2><p style='text-align:center'>FREE Real Call</p>", unsafe_allow_html=True)
-    pwd = st.text_input("Password (1234)", type="password")
+    pwd = st.text_input("Password ", type="password")
     if st.button("Unlock", use_container_width=True, type="primary"):
-        if pwd == "1234":
+        if pwd == "meAbu":
             st.session_state.auth = True
             st.rerun()
         else: st.error("Wrong!")
