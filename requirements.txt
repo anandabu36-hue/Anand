@@ -1,5 +1,2 @@
 streamlit
-streamlit-webrtc
-sarvam
-av
-tornado==6.3.3
+sarvamai
