@@ -11,8 +11,7 @@ client = SarvamAI(api_subscription_key=API_KEY)
 RTC_CONFIG = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
 st.set_page_config(page_title="Anand Translator", layout="centered")
 
-# --- ALL STATES ---
-for k,v in {"auth":False,"room":None,"is_muted":False,"is_live":False,"is_hold":False,"is_speaker":False,"is_video":False,"show_keypad":False,"show_notes":False,"my_id":str(uuid.uuid4())[:6],"notes_text":"","dial_number":"","my_speak":"Telugu","my_listen":"Hindi"}.items():
+for k,v in {"auth":False,"room":None,"is_muted":False,"is_live":False,"is_hold":False,"is_speaker":False,"is_video":False,"show_keypad":False,"show_notes":False,"my_id":str(uuid.uuid4())[:6],"notes_text":"","dial_number":"","my_speak":"Hindi","my_listen":"Telugu"}.items():
     if k not in st.session_state: st.session_state[k]=v
 
 if not st.session_state.auth:
@@ -37,15 +36,28 @@ if not st.session_state.room:
             code=st.text_input("Room Code (ex: ANAND-DOCC)")
             if st.form_submit_button("Join",use_container_width=True):
                 rc=code.upper().strip().replace(" ","")
-                if not rc: st.error("Code enter chey")
+                if not rc:
+                    st.error("Code enter chey")
                 else:
+                    # === FIX 2: CORRECT CODE UNTE NE JOIN ===
                     os.makedirs("room_data",exist_ok=True)
-                    open(f"room_data/{rc}.room","w").write("room")
-                    if not os.path.exists(f"room_data/{rc}_users.txt"):
-                        open(f"room_data/{rc}_users.txt","w").write("")
-                    st.session_state.room=rc; st.rerun()
+                    # Check room exists
+                    if not os.path.exists(f"room_data/{rc}.room") and not os.path.exists(f"room_data/{rc}_users.txt"):
+                        st.error(f"❌ Room {rc} Not Found! Create new or check code")
+                    else:
+                        # Valid room - join
+                        open(f"room_data/{rc}.room","w").write("room")
+                        st.session_state.room=rc
+                        st.success(f"✅ Joined {rc}")
+                        time.sleep(0.5)
+                        st.rerun()
+    # Show active rooms
+    rooms=glob.glob("room_data/*.room")
+    if rooms:
+        st.info("Active Rooms: " + ", ".join([os.path.basename(r).replace(".room","") for r in rooms][-5:]))
     st.stop()
 
+# CSS
 st.markdown("""
 <style>
 .block-container{max-width:480px!important}.stApp{background:#121212!important}
@@ -57,7 +69,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- LIVE COUNT FIX ---
 os.makedirs("room_data",exist_ok=True)
 cf=f"room_data/{st.session_state.room}_users.txt"
 now=time.time()
@@ -107,28 +118,24 @@ if st.session_state.show_keypad:
     if st.button("Clear"): st.session_state.dial_number=""; st.rerun()
     if st.button("Close Keypad"): st.session_state.show_keypad=False; st.rerun()
 
-# === FIX FOR YOUR 1ST POINT - MY SPEAK + MY LISTEN ===
+# === I SPEAK + I LISTEN ===
 lang_map={"Hindi":"hi-IN","Telugu":"te-IN","Tamil":"ta-IN","English":"en-IN"}
 langs=["Telugu","Hindi","Tamil","English"]
 c1,c2=st.columns(2)
-with c1:
-    st.session_state.my_speak=st.selectbox("I Speak:", langs, index=langs.index(st.session_state.my_speak))
-with c2:
-    st.session_state.my_listen=st.selectbox("I Want to Listen In:", langs, index=langs.index(st.session_state.my_listen))
+with c1: st.session_state.my_speak=st.selectbox("I Speak:", langs, index=langs.index(st.session_state.my_speak))
+with c2: st.session_state.my_listen=st.selectbox("I Listen In:", langs, index=langs.index(st.session_state.my_listen))
 st.caption(f"Avathala vadu em matladina neeku {st.session_state.my_listen} lo vinipistundi")
 
-# --- 9 BUTTONS ---
 r1c1,r1c2,r1c3=st.columns(3)
 with r1c1:
     if st.button("📝",key="b1"): st.session_state.show_notes=not st.session_state.show_notes; st.rerun()
     st.markdown("<div class='label'>Notes</div>", unsafe_allow_html=True)
 with r1c2:
-    if st.button("➕",key="b2"): st.toast(f"Invite Code: {st.session_state.room}"); st.info(f"Share Room Code {st.session_state.room}")
+    if st.button("➕",key="b2"): st.toast(f"Invite Code: {st.session_state.room}")
     st.markdown("<div class='label'>Add call</div>", unsafe_allow_html=True)
 with r1c3:
     if st.button("🔇" if not st.session_state.is_muted else "🎙️",key="b3"): st.session_state.is_muted=not st.session_state.is_muted; st.rerun()
     st.markdown("<div class='label'>Mute</div>", unsafe_allow_html=True)
-
 r2c1,r2c2,r2c3=st.columns(3)
 with r2c1:
     if st.button("🔴" if st.session_state.is_live else "⚪",key="b4"): st.session_state.is_live=not st.session_state.is_live; st.rerun()
@@ -139,7 +146,6 @@ with r2c2:
 with r2c3:
     if st.button("⏸️",key="b6"): st.session_state.is_hold=not st.session_state.is_hold; st.rerun()
     st.markdown("<div class='label'>Hold</div>", unsafe_allow_html=True)
-
 r3c1,r3c2,r3c3=st.columns(3)
 with r3c1:
     if st.button("⌨️",key="b7"): st.session_state.show_keypad=not st.session_state.show_keypad; st.rerun()
@@ -158,28 +164,17 @@ with r3c3:
     st.markdown("<div class='label'>Speaker</div>",unsafe_allow_html=True)
 
 st.divider()
-
-# --- VOICE LIVE (WebRTC) ---
 def audio_callback(frame: av.AudioFrame):
     if st.session_state.is_hold or st.session_state.is_muted or not st.session_state.is_live:
         return av.AudioFrame.from_ndarray(np.zeros((frame.samples, 2), dtype=np.int16), layout=frame.layout.name)
     return frame
 
-ctx = webrtc_streamer(
-    key=f"voice-{st.session_state.room}",
-    mode=WebRtcMode.SENDRECV,
-    rtc_configuration=RTC_CONFIG,
-    media_stream_constraints={"video":False,"audio":True},
-    audio_frame_callback=audio_callback,
-    async_processing=True,
-)
+ctx = webrtc_streamer(key=f"voice-{st.session_state.room}", mode=WebRtcMode.SENDRECV, rtc_configuration=RTC_CONFIG, media_stream_constraints={"video":False,"audio":True}, audio_frame_callback=audio_callback, async_processing=True)
 if ctx.state.playing: st.success("🎙️ Mic ON")
 else: st.warning("👇 START nokki mic allow chey")
 
 st.divider()
-
-# === NEW: PUSH TO TALK WITH PER-RECEIVER TRANSLATION ===
-st.markdown("### 🎤 Push to Talk - Translate chesi pampisthundi")
+st.markdown("### 🎤 Push to Talk")
 audio = st.audio_input(f"Mic nokki {st.session_state.my_speak} lo matladu")
 
 if audio:
@@ -193,67 +188,58 @@ if audio:
                     stt_res = client.speech_to_text.transcribe(file=f, model="saaras:v3", language_code=speak_code)
                     orig = getattr(stt_res, 'transcript', '') or str(stt_res)
                 st.info(f"You said ({st.session_state.my_speak}): {orig}")
-                # Save for ALL other users - they will translate to THEIR language on refresh
                 bfile=f"room_data/{st.session_state.room}_broadcast_{int(time.time())}_{st.session_state.my_id}.txt"
                 open(bfile,"w",encoding="utf-8").write(orig)
                 open(bfile.replace(".txt","_lang.txt"),"w").write(speak_code)
                 st.success("Sent! Avathala vadu refresh chesthe vadiki vadi language lo vinipistundi")
-            except Exception as e:
-                st.error(f"STT Error: {e}")
-    else:
-        st.warning("Translate ON chey, Hold/Mute off chey")
+            except Exception as e: st.error(f"STT Error: {e}")
 
 st.divider()
-st.markdown(f"### 🔊 Incoming - Neeku {st.session_state.my_listen} lo vinipistundi")
+st.markdown(f"### 🔊 Incoming - Neeku {st.session_state.my_listen} lo")
 
 broadcasts=sorted(glob.glob(f"room_data/{st.session_state.room}_broadcast_*.txt"), reverse=True)
 broadcasts=[b for b in broadcasts if "_lang" not in b][:5]
 
-if not broadcasts:
-    st.caption("Inka voice ledu - rendu phones lo SAME code join avvu")
-else:
-    for bfile in broadcasts:
-        try:
-            if st.session_state.my_id in bfile: continue
-            if time.time()-os.path.getmtime(bfile)>300: continue
-            orig_text=open(bfile,"r",encoding="utf-8").read()
-            sender=bfile.split("_")[-1].replace(".txt","")
-            lang_file=bfile.replace(".txt","_lang.txt")
-            src_code=open(lang_file,"r").read().strip() if os.path.exists(lang_file) else "te-IN"
-            if not orig_text: continue
-            
-            tgt_code=lang_map[st.session_state.my_listen]
-            # Skip if same language
-            if src_code==tgt_code:
-                translated=orig_text
-            else:
-                cache_txt=f"room_data/{st.session_state.room}_to_{st.session_state.my_id}_from_{sender}_{int(os.path.getmtime(bfile))}_{st.session_state.my_listen}.txt"
-                cache_audio=cache_txt.replace(".txt",".wav")
-                if not os.path.exists(cache_audio):
-                    # FIX: explicit source language - no auto
-                    trans_res = client.text.translate(input=orig_text, source_language_code=src_code, target_language_code=tgt_code)
-                    translated = getattr(trans_res, 'translated_text', orig_text)
-                    open(cache_txt,"w",encoding="utf-8").write(f"{orig_text} -> {translated}")
-                    # FIX: TTS param
-                    try:
-                        tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, speaker="anushka", model="bulbul:v2")
-                    except TypeError:
-                        tts_res = client.text_to_speech.convert(text=translated, language_code=tgt_code, speaker="anushka", model="bulbul:v2")
-                    audio_b64 = tts_res.audios[0] if hasattr(tts_res,'audios') else None
-                    if audio_b64:
-                        try: data=base64.b64decode(audio_b64)
-                        except: data=audio_b64.encode() if isinstance(audio_b64,str) else audio_b64
-                        open(cache_audio,"wb").write(data)
-                else:
-                    translated=open(cache_txt,"r",encoding="utf-8").read() if os.path.exists(cache_txt) else orig_text
-            
-            st.markdown(f"**From {sender} ({src_code} -> {tgt_code}):** {orig_text} -> {translated if 'translated' in locals() else orig_text}")
-            if os.path.exists(cache_audio if 'cache_audio' in locals() else ""):
-                st.audio(cache_audio)
-            elif src_code==tgt_code:
-                st.caption("Same language - no translation needed")
-        except Exception as e:
-            st.error(f"Translate Error: {e}")
+for bfile in broadcasts:
+    try:
+        if st.session_state.my_id in bfile: continue
+        if time.time()-os.path.getmtime(bfile)>300: continue
+        orig_text=open(bfile,"r",encoding="utf-8").read()
+        sender=bfile.split("_")[-1].replace(".txt","")
+        lang_file=bfile.replace(".txt","_lang.txt")
+        src_code=open(lang_file,"r").read().strip() if os.path.exists(lang_file) else "te-IN"
+        if not orig_text: continue
+        
+        tgt_code=lang_map[st.session_state.my_listen]
+        cache_txt=f"room_data/{st.session_state.room}_to_{st.session_state.my_id}_from_{sender}_{int(os.path.getmtime(bfile))}_{st.session_state.my_listen}.txt"
+        cache_audio=cache_txt.replace(".txt",".wav")
+
+        if src_code==tgt_code:
+            st.markdown(f"**From {sender}:** {orig_text} (Same language)")
+            continue
+
+        if not os.path.exists(cache_audio):
+            with st.spinner(f"Translating {src_code} -> {tgt_code}..."):
+                trans_res = client.text.translate(input=orig_text, source_language_code=src_code, target_language_code=tgt_code)
+                translated = getattr(trans_res, 'translated_text', orig_text)
+                open(cache_txt,"w",encoding="utf-8").write(f"{orig_text} -> {translated}")
+                # === FIX 1: bulbul:v3 ===
+                try:
+                    tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, speaker="anushka", model="bulbul:v3")
+                except TypeError:
+                    tts_res = client.text_to_speech.convert(text=translated, language_code=tgt_code, speaker="anushka", model="bulbul:v3")
+                audio_b64 = tts_res.audios[0] if hasattr(tts_res,'audios') and tts_res.audios else None
+                if audio_b64:
+                    try: data=base64.b64decode(audio_b64)
+                    except: data=audio_b64.encode() if isinstance(audio_b64,str) else audio_b64
+                    open(cache_audio,"wb").write(data)
+
+        if os.path.exists(cache_audio):
+            info=open(cache_txt,"r",encoding="utf-8").read() if os.path.exists(cache_txt) else orig_text
+            st.markdown(f"**From {sender} ({src_code} -> {tgt_code}):** {info}")
+            st.audio(cache_audio)
+    except Exception as e:
+        st.error(f"Translate Error: {e}")
 
 if st.button("🔄 Refresh to get new translated voice",use_container_width=True, type="primary"):
     st.rerun()
