@@ -11,32 +11,38 @@ client = SarvamAI(api_subscription_key=API_KEY)
 RTC_CONFIG = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
 st.set_page_config(page_title="Anand Translator", layout="centered")
 
-for k,v in {"auth":False,"room":None,"is_muted":False,"is_live":True,"is_hold":False,"my_id":str(uuid.uuid4())[:6],"my_listen":"Telugu","recording":False}.items():
+for k,v in {"auth":False,"room":None,"is_muted":False,"is_live":True,"is_hold":False,"is_speaker":True,"is_video":False,"show_keypad":False,"show_notes":False,"my_id":str(uuid.uuid4())[:6],"notes_text":"","dial_number":"","my_listen":"Telugu","was_recording":False}.items():
     if k not in st.session_state: st.session_state[k]=v
 
 if not st.session_state.auth:
-    with st.form("login"):
+    with st.form("login_form"):
         pwd=st.text_input("Password",type="password")
-        if st.form_submit_button("Unlock",type="primary") and pwd=="meAbu":
+        if st.form_submit_button("Unlock",use_container_width=True,type="primary") and pwd=="meAbu":
             st.session_state.auth=True; st.rerun()
     st.stop()
 
 if not st.session_state.room:
-    st.markdown("<h2 style='text-align:center'>📞 Anand Translator</h2>",unsafe_allow_html=True)
-    if st.button("Create New Room",type="primary",use_container_width=True):
-        st.session_state.room=f"ANAND-{str(uuid.uuid4())[:4].upper()}"
-        os.makedirs("room_data",exist_ok=True)
-        open(f"room_data/{st.session_state.room}.room","w").write("room")
-        st.rerun()
-    with st.form("join"):
-        code=st.text_input("Room Code")
-        if st.form_submit_button("Join",use_container_width=True):
-            rc=code.upper().strip()
+    st.markdown("<div style='background:linear-gradient(90deg,#4facfe,#1a237e);border-radius:20px;padding:20px;color:white;text-align:center'><h2>📞 Anand Translator</h2></div>", unsafe_allow_html=True)
+    c1,c2=st.columns(2)
+    with c1:
+        if st.button("📞 Create",use_container_width=True,type="primary"):
+            st.session_state.room=f"ANAND-{str(uuid.uuid4())[:5].upper()}"
             os.makedirs("room_data",exist_ok=True)
-            if not os.path.exists(f"room_data/{rc}.room") and not os.path.exists(f"room_data/{rc}_users.txt"):
-                st.error(f"Room {rc} Not Found!")
-            else:
-                st.session_state.room=rc; st.rerun()
+            open(f"room_data/{st.session_state.room}.room","w").write("room")
+            open(f"room_data/{st.session_state.room}_users.txt","w").write(f"{st.session_state.my_id}|{time.time()}\n")
+            st.rerun()
+    with c2:
+        with st.form("join_form"):
+            code=st.text_input("Room Code")
+            if st.form_submit_button("Join",use_container_width=True):
+                rc=code.upper().strip().replace(" ","")
+                os.makedirs("room_data",exist_ok=True)
+                if not os.path.exists(f"room_data/{rc}.room") and not os.path.exists(f"room_data/{rc}_users.txt"):
+                    st.error(f"❌ Room {rc} Not Found!")
+                else:
+                    st.session_state.room=rc; st.rerun()
+    rooms=glob.glob("room_data/*.room")
+    if rooms: st.info("Active: "+", ".join([os.path.basename(r).replace(".room","") for r in rooms][-5:]))
     st.stop()
 
 st.markdown("""
@@ -44,7 +50,9 @@ st.markdown("""
 .block-container{max-width:480px!important}.stApp{background:#121212!important}
 .call-screen{background:linear-gradient(135deg,#5aa9ff 0%,#1e3c8a 100%);border-radius:28px;padding:22px;color:white;text-align:center}
 .count-box{background:#1f2937;border-radius:12px;padding:10px;color:#10b981;font-weight:700;text-align:center;margin:12px 0}
-.label{color:#a1a1a6!important;font-size:11px!important;text-align:center!important;margin-bottom:15px!important}
+.stButton>button{background:#2c2c2e!important;width:78px!important;height:78px!important;border-radius:50%!important;border:none!important;color:white!important;font-size:22px!important;margin:0 auto!important;display:block!important}
+.label{color:#a1a1a6!important;font-size:12px!important;text-align:center!important;margin-bottom:18px!important;margin-top:6px!important}
+.end-btn button{background:#ff3b30!important}
 </style>
 """, unsafe_allow_html=True)
 
@@ -65,66 +73,73 @@ with open(cf,"w") as f:
     for uid,t in users.items(): f.write(f"{uid}|{t}\n")
 count=len(users)
 
-st.markdown(f"<div class='call-screen'><h3>Room: {st.session_state.room}</h3><p>👥 Live: {count} | 🔴 LIVE</p></div>",unsafe_allow_html=True)
+status = "🔴 On Hold" if st.session_state.is_hold else "🔇 Muted" if st.session_state.is_muted else "🔴 LIVE" if st.session_state.is_live else "⚪ Paused"
+st.markdown(f"<div class='call-screen'><h3>Telugu - Anand Paul</h3><p>{status} | Room: {st.session_state.room}</p></div>", unsafe_allow_html=True)
+st.markdown(f"<div class='count-box'>👥 Live: {count} | Room: {st.session_state.room}</div>",unsafe_allow_html=True)
+if st.button("🔄 Refresh Live Count", use_container_width=True):
+    st.rerun()
 
 lang_map={"Hindi":"hi-IN","Telugu":"te-IN","Tamil":"ta-IN","English":"en-IN"}
-st.session_state.my_listen=st.selectbox("I Listen:", ["Telugu","Hindi","Tamil","English"], index=["Telugu","Hindi","Tamil","English"].index(st.session_state.my_listen))
-st.caption("Nuvvu em matladina auto-detect - START lone record avuthundi")
+st.session_state.my_listen=st.selectbox("Nenu Vinalanukune Bhasha / I Listen:", ["Telugu","Hindi","Tamil","English"], index=["Telugu","Hindi","Tamil","English"].index(st.session_state.my_listen))
 
 # --- 9 BUTTONS ---
 r1c1,r1c2,r1c3=st.columns(3)
 with r1c1:
-    if st.button("📝",key="b1"): st.session_state.show_notes=not st.session_state.get("show_notes",False)
-    st.markdown("<div class='label'>Notes</div>",unsafe_allow_html=True)
+    if st.button("📝",key="b1"): st.session_state.show_notes=not st.session_state.show_notes; st.rerun()
+    st.markdown("<div class='label'>Notes</div>", unsafe_allow_html=True)
 with r1c2:
-    if st.button("➕",key="b2"): st.info(f"Code: {st.session_state.room}")
-    st.markdown("<div class='label'>Add call</div>",unsafe_allow_html=True)
+    if st.button("➕",key="b2"): st.info(f"Invite Code: {st.session_state.room}")
+    st.markdown("<div class='label'>Add call</div>", unsafe_allow_html=True)
 with r1c3:
-    if st.button("🔇",key="b3"): st.session_state.is_muted=not st.session_state.is_muted
-    st.markdown("<div class='label'>Mute</div>",unsafe_allow_html=True)
+    if st.button("🔇" if not st.session_state.is_muted else "🎙️",key="b3"): st.session_state.is_muted=not st.session_state.is_muted; st.rerun()
+    st.markdown("<div class='label'>Mute</div>", unsafe_allow_html=True)
 r2c1,r2c2,r2c3=st.columns(3)
 with r2c1:
-    if st.button("🔴",key="b4"): st.session_state.is_live=not st.session_state.is_live
-    st.markdown("<div class='label'>Translate</div>",unsafe_allow_html=True)
+    if st.button("🔴" if st.session_state.is_live else "⚪",key="b4"): st.session_state.is_live=not st.session_state.is_live; st.rerun()
+    st.markdown("<div class='label'>Translate ON</div>", unsafe_allow_html=True)
 with r2c2:
-    if st.button("📹",key="b5"): st.toast("Video soon")
-    st.markdown("<div class='label'>Video</div>",unsafe_allow_html=True)
+    if st.button("📹",key="b5"): st.toast("Video soon"); st.rerun()
+    st.markdown("<div class='label'>Video call</div>", unsafe_allow_html=True)
 with r2c3:
-    if st.button("⏸️",key="b6"): st.session_state.is_hold=not st.session_state.is_hold
-    st.markdown("<div class='label'>Hold</div>",unsafe_allow_html=True)
+    if st.button("⏸️",key="b6"): st.session_state.is_hold=not st.session_state.is_hold; st.rerun()
+    st.markdown("<div class='label'>Hold</div>", unsafe_allow_html=True)
 r3c1,r3c2,r3c3=st.columns(3)
 with r3c1:
-    if st.button("⌨️",key="b7"): pass
-    st.markdown("<div class='label'>Keypad</div>",unsafe_allow_html=True)
+    if st.button("⌨️",key="b7"): st.session_state.show_keypad=not st.session_state.show_keypad; st.rerun()
+    st.markdown("<div class='label'>Keypad</div>", unsafe_allow_html=True)
 with r3c2:
-    if st.button("📞",key="b8"): st.session_state.room=None; st.rerun()
-    st.markdown("<div class='label'>End</div>",unsafe_allow_html=True)
+    st.markdown('<div class="end-btn">', unsafe_allow_html=True)
+    if st.button("📞",key="b8"):
+        if st.session_state.my_id in users: del users[st.session_state.my_id]
+        with open(cf,"w") as f:
+            for uid,t in users.items(): f.write(f"{uid}|{t}\n")
+        st.session_state.room=None; st.rerun()
+    st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown("<div class='label'>End call</div>",unsafe_allow_html=True)
 with r3c3:
-    if st.button("🔊",key="b9"): pass
+    if st.button("🔊",key="b9"): st.session_state.is_speaker=not st.session_state.is_speaker; st.rerun()
     st.markdown("<div class='label'>Speaker</div>",unsafe_allow_html=True)
 
 st.divider()
 
-# --- START = MIC + RECORD ON/OFF ---
-# Buffer file for live recording
+# --- START = MIC + RECORD ON/OFF (mic + record option teesesanu) ---
 BUFFER_RAW = f"room_data/{st.session_state.room}_{st.session_state.my_id}_live.raw"
 META_FILE = f"room_data/{st.session_state.room}_{st.session_state.my_id}_meta.txt"
 
 def audio_callback(frame: av.AudioFrame):
     if st.session_state.is_hold or st.session_state.is_muted or not st.session_state.is_live:
-        return frame
+        return av.AudioFrame.from_ndarray(np.zeros((frame.samples, 2), dtype=np.int16), layout=frame.layout.name)
     try:
-        # Save PCM continuously while START is ON
         arr = frame.to_ndarray()
-        # Save meta once
         if not os.path.exists(META_FILE):
-            open(META_FILE,"w").write(f"{frame.sample_rate},{frame.layout.name},{arr.shape}")
+            open(META_FILE,"w").write(f"{frame.sample_rate}")
         with open(BUFFER_RAW,"ab") as f:
             f.write(arr.tobytes())
     except: pass
     return frame
 
-st.markdown("### 🎤 Step 1: START = Record ON, STOP = Record OFF + Sent")
+st.markdown("### 🎤 START = Mic + Record ON | STOP = Record OFF + Sent")
+
 ctx = webrtc_streamer(
     key=f"voice-{st.session_state.room}",
     mode=WebRtcMode.SENDRECV,
@@ -136,95 +151,79 @@ ctx = webrtc_streamer(
 
 if ctx.state.playing:
     st.success("🔴 Recording... Matladu! Aipoyaka STOP nokku")
-    st.session_state.recording = True
+    st.session_state.was_recording = True
 else:
-    if st.session_state.recording:
-        # Just stopped - process buffer
-        st.session_state.recording = False
-        if os.path.exists(BUFFER_RAW) and os.path.getsize(BUFFER_RAW) > 1000:
-            with st.spinner("Processing... Auto-detect & Sending..."):
+    # STOP nokkithe - Record OFF + Sent
+    if st.session_state.was_recording:
+        st.session_state.was_recording = False
+        if os.path.exists(BUFFER_RAW) and os.path.getsize(BUFFER_RAW) > 2000:
+            with st.spinner("Record OFF - Processing..."):
                 try:
-                    # Convert raw to wav
-                    wav_path = f"room_data/{st.session_state.room}_{st.session_state.my_id}_in_{int(time.time())}.wav"
-                    # Try to get meta
                     sr = 48000
-                    ch = 1
                     if os.path.exists(META_FILE):
-                        try:
-                            meta = open(META_FILE,"r").read().split(",")
-                            sr = int(meta[0])
+                        try: sr = int(open(META_FILE,"r").read().split(",")[0])
                         except: pass
-                    # Read raw bytes
                     raw_data = open(BUFFER_RAW,"rb").read()
-                    # Convert int16 array to wav
-                    # Assume mono/stereo detection from array shape
+                    wav_path = f"room_data/{st.session_state.room}_{st.session_state.my_id}_in_{int(time.time())}.wav"
                     with wave.open(wav_path, 'wb') as wf:
                         wf.setnchannels(1)
-                        wf.setsampwidth(2) # int16
+                        wf.setsampwidth(2)
                         wf.setframerate(sr)
                         wf.writeframes(raw_data)
-                    
-                    # Clear buffer for next
                     os.remove(BUFFER_RAW)
                     if os.path.exists(META_FILE): os.remove(META_FILE)
 
-                    # STT Auto-detect
                     with open(wav_path,"rb") as f:
-                        try:
-                            stt = client.speech_to_text.transcribe(file=f, model="saaras:v3")
+                        try: stt_res = client.speech_to_text.transcribe(file=f, model="saaras:v3")
                         except:
                             f.seek(0)
-                            stt = client.speech_to_text.transcribe(file=f, model="saaras:v3", language_code="te-IN")
-                        orig = getattr(stt,'transcript','') or str(stt)
+                            stt_res = client.speech_to_text.transcribe(file=f, model="saaras:v3", language_code="te-IN")
+                        orig = getattr(stt_res, 'transcript', '') or str(stt_res)
                     
                     if orig:
                         st.info(f"You said: {orig}")
-                        bfile = f"room_data/{st.session_state.room}_broadcast_{int(time.time())}_{st.session_state.my_id}.txt"
+                        bfile=f"room_data/{st.session_state.room}_broadcast_{int(time.time())}_{st.session_state.my_id}.txt"
                         open(bfile,"w",encoding="utf-8").write(orig)
-                        st.success("✅ Sent! Vere phone lo Refresh nokkithe vadiki vinipisthundi")
+                        open(bfile.replace(".txt","_lang.txt"),"w").write("auto")
+                        st.success("✅ Sent! Vere phone lo Refresh nokkithe vini")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"STT Error: {e}")
                     if os.path.exists(BUFFER_RAW): os.remove(BUFFER_RAW)
         else:
-            st.warning("👇 START nokki matladu - STOP nokkithe Sent avuthundi")
-
-# Clear buffer button if stuck
-if os.path.exists(BUFFER_RAW):
-    if st.button("🗑️ Clear Buffer & Restart"):
-        os.remove(BUFFER_RAW)
-        if os.path.exists(META_FILE): os.remove(META_FILE)
-        st.rerun()
+            st.warning("👇 START nokki matladu - STOP nokkithe auto Sent avuthundi")
 
 st.divider()
-st.markdown(f"### 🔊 Step 2: Incoming - {st.session_state.my_listen} lo")
-files=sorted(glob.glob(f"room_data/{st.session_state.room}_broadcast_*.txt"), reverse=True)
-files=[f for f in files if "_lang" not in f][:5]
-for f in files:
+st.markdown(f"### 🔊 Incoming - {st.session_state.my_listen} lo")
+
+broadcasts=sorted(glob.glob(f"room_data/{st.session_state.room}_broadcast_*.txt"), reverse=True)
+broadcasts=[b for b in broadcasts if "_lang" not in b][:5]
+for bfile in broadcasts:
     try:
-        if st.session_state.my_id in f: continue
-        if time.time()-os.path.getmtime(f)>600: continue
-        orig=open(f,"r",encoding="utf-8").read()
-        sender=f.split("_")[-1].replace(".txt","")
-        tgt=lang_map[st.session_state.my_listen]
-        cache=f"room_data/{st.session_state.room}_to_{st.session_state.my_id}_from_{sender}_{int(os.path.getmtime(f))}_{st.session_state.my_listen}.wav"
-        cache_txt=cache.replace(".wav",".txt")
-        if not os.path.exists(cache):
+        if st.session_state.my_id in bfile: continue
+        if time.time()-os.path.getmtime(bfile)>600: continue
+        orig_text=open(bfile,"r",encoding="utf-8").read()
+        sender=bfile.split("_")[-1].replace(".txt","")
+        if not orig_text: continue
+        tgt_code=lang_map[st.session_state.my_listen]
+        cache_audio=f"room_data/{st.session_state.room}_to_{st.session_state.my_id}_from_{sender}_{int(os.path.getmtime(bfile))}_{st.session_state.my_listen}.wav"
+        cache_txt=cache_audio.replace(".wav",".txt")
+        if not os.path.exists(cache_audio):
             with st.spinner(f"Translating to {st.session_state.my_listen}..."):
-                trans=client.text.translate(input=orig, source_language_code="auto", target_language_code=tgt, model="mayura:v1")
-                tr=getattr(trans,'translated_text',orig)
-                open(cache_txt,"w",encoding="utf-8").write(f"{orig} -> {tr}")
-                try: tts=client.text_to_speech.convert(text=tr, target_language_code=tgt, speaker="anand", model="bulbul:v3")
-                except: tts=client.text_to_speech.convert(text=tr, language_code=tgt, speaker="anand", model="bulbul:v3")
-                aud=tts.audios[0] if hasattr(tts,'audios') else None
-                if aud:
-                    try: data=base64.b64decode(aud)
-                    except: data=aud.encode() if isinstance(aud,str) else aud
-                    open(cache,"wb").write(data)
-        if os.path.exists(cache):
-            info=open(cache_txt,"r",encoding="utf-8").read() if os.path.exists(cache_txt) else orig
+                trans_res = client.text.translate(input=orig_text, source_language_code="auto", target_language_code=tgt_code, model="mayura:v1")
+                translated = getattr(trans_res, 'translated_text', orig_text)
+                open(cache_txt,"w",encoding="utf-8").write(f"{orig_text} -> {translated}")
+                try: tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, speaker="anand", model="bulbul:v3")
+                except: tts_res = client.text_to_speech.convert(text=translated, language_code=tgt_code, speaker="anand", model="bulbul:v3")
+                ab64 = tts_res.audios[0] if hasattr(tts_res,'audios') else None
+                if ab64:
+                    try: data=base64.b64decode(ab64)
+                    except: data=ab64.encode() if isinstance(ab64,str) else ab64
+                    open(cache_audio,"wb").write(data)
+        if os.path.exists(cache_audio):
+            info=open(cache_txt,"r",encoding="utf-8").read() if os.path.exists(cache_txt) else orig_text
             st.markdown(f"**From {sender}:** {info}")
-            st.audio(cache, autoplay=True)
-    except Exception as e: st.error(f"{e}")
+            st.audio(cache_audio, autoplay=True)
+    except Exception as e: st.error(f"Translate Error: {e}")
 
 if st.button("🔄 Refresh Incoming",use_container_width=True, type="primary"):
     st.rerun()
