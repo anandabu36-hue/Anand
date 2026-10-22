@@ -225,9 +225,9 @@ for bfile in broadcasts:
                 open(cache_txt,"w",encoding="utf-8").write(f"{orig_text} -> {translated}")
                 # === FIX 1: bulbul:v3 ===
                 try:
-                    tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, speaker="anushka", model="bulbul:v3")
+                    tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, speaker="anand", model="bulbul:v3")
                 except TypeError:
-                    tts_res = client.text_to_speech.convert(text=translated, language_code=tgt_code, speaker="anushka", model="bulbul:v3")
+                    tts_res = client.text_to_speech.convert(text=translated, language_code=tgt_code, speaker="anand", model="bulbul:v3")
                 audio_b64 = tts_res.audios[0] if hasattr(tts_res,'audios') and tts_res.audios else None
                 if audio_b64:
                     try: data=base64.b64decode(audio_b64)
