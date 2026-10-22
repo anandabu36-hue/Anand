@@ -184,8 +184,9 @@ def audio_callback(frame: av.AudioFrame):
         return av.AudioFrame.from_ndarray(np.zeros((frame.samples, 2), dtype=np.int16), layout=frame.layout.name)
     return frame
 
+# --- NEW CODE - Idhi pettu ---
 ctx = webrtc_streamer(
-    key=f"voice-{st.session_state.room}",
+    key=f"voice-{st.session_state.room}-{st.session_state.my_id}",
     mode=WebRtcMode.SENDRECV,
     rtc_configuration=RTC_CONFIG,
     media_stream_constraints={"video":False,"audio":True},
