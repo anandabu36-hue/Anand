@@ -1,4 +1,4 @@
-import streamlit as st, os, time, uuid, base64
+import streamlit as st, os, time, uuid, base64, glob
 from sarvamai import SarvamAI
 
 st.set_page_config(page_title="Anand Translator", layout="centered")
@@ -18,12 +18,38 @@ if not st.session_state.auth:
 
 if not st.session_state.room:
     st.markdown("<h2 style='text-align:center'>📞 Anand Translator</h2>",unsafe_allow_html=True)
-    if st.button("Create New Room",type="primary",use_container_width=True):
-        st.session_state.room=f"ANAND-{str(uuid.uuid4())[:4].upper()}"; os.makedirs("room_data",exist_ok=True); st.rerun()
+    c1,c2=st.columns(2)
+    with c1:
+        if st.button("Create New Room",type="primary",use_container_width=True):
+            st.session_state.room=f"ANAND-{str(uuid.uuid4())[:4].upper()}"
+            os.makedirs("room_data",exist_ok=True)
+            # Create empty room marker
+            open(f"room_data/{st.session_state.room}.room","w").write("room")
+            st.rerun()
+    with c2:
+        if st.button("Active Rooms",use_container_width=True):
+            rooms=glob.glob("room_data/*.room")
+            if rooms: st.info("Active: "+", ".join([os.path.basename(r).replace('.room','') for r in rooms][-5:]))
+            else: st.info("No active rooms")
+
     with st.form("join"):
-        code=st.text_input("Enter Room Code")
-        if st.form_submit_button("Join Room",use_container_width=True):
-            st.session_state.room=code.upper().strip(); st.rerun()
+        code=st.text_input("Enter Room Code (ex: ANAND-057B)", placeholder="ANAND-XXXX")
+        j=st.form_submit_button("Join Room",use_container_width=True, type="primary")
+        if j:
+            rc=code.upper().strip().replace(" ","")
+            if not rc:
+                st.error("Code enter chey")
+            else:
+                # FIX 1: Same code tho join avvali - check and allow
+                # If .room file ledu kuda allow, but create marker
+                os.makedirs("room_data",exist_ok=True)
+                if not os.path.exists(f"room_data/{rc}.room"):
+                    # If user typed existing ANAND code but marker ledu, still allow and create
+                    open(f"room_data/{rc}.room","w").write("room")
+                st.session_state.room=rc
+                st.success(f"Joined {rc}")
+                time.sleep(0.5)
+                st.rerun()
     st.stop()
 
 st.markdown("""
@@ -83,12 +109,11 @@ if st.session_state.show_keypad:
         st.session_state.show_keypad=False; st.rerun()
     st.divider()
 
-# MAIN DESIGN
 st.markdown(f"<div class='call-screen'><h3>Telugu - Anand Paul</h3><p>{status_text}<br>Room: {st.session_state.room}</p></div>",unsafe_allow_html=True)
 st.markdown(f"<div class='count-box'>👥 Live: {live_count} | Room: {st.session_state.room}</div>",unsafe_allow_html=True)
 
-# === 2. TRANSLATE OPTION - NEE KAVALISINA BHASHALO VINADANIKI ===
-st.session_state.my_listen_lang = st.selectbox("Nenu Vinalanukune Bhasha / My Listening Language:", ["Telugu","Hindi","Tamil","English"], index=0 if st.session_state.my_listen_lang=="Telugu" else 1 if st.session_state.my_listen_lang=="Hindi" else 0)
+# FIX 2: My Listening Language - avathala vadu em matladina neeku ee bhashalo
+st.session_state.my_listen_lang = st.selectbox("Nenu Vinalanukune Bhasha / My Listening Language:", ["Telugu","Hindi","Tamil","English"], index=["Telugu","Hindi","Tamil","English"].index(st.session_state.my_listen_lang))
 st.caption(f"Avathala vallu em matladina neeku {st.session_state.my_listen_lang} lo vinipistundi")
 
 r1c1,r1c2,r1c3=st.columns(3)
@@ -130,57 +155,67 @@ with r3c3:
 
 st.divider()
 st.markdown("### 🎤 Push to Talk")
-audio=st.audio_input("Mic nokki matladu")
+audio=st.audio_input("Mic nokki matladu - avathala vallaki veltundi")
 
 lang_map={"Hindi":"hi-IN","Telugu":"te-IN","Tamil":"ta-IN","English":"en-IN"}
 
 if audio:
-    if st.session_state.is_muted: st.warning("Mute ON - off chey")
+    if st.session_state.is_muted: st.warning("Mute ON")
     elif st.session_state.is_hold or not st.session_state.is_live: st.warning(status_text)
     else:
         in_path=f"room_data/{st.session_state.room}_{st.session_state.my_id}_in_{int(time.time())}.wav"
         with open(in_path,"wb") as f: f.write(audio.getbuffer())
         with st.spinner("Processing..."):
             try:
-                # 1. FIXED STT - saaras:v3
                 with open(in_path,"rb") as f:
                     stt_res = client.speech_to_text.transcribe(file=f, model="saaras:v3", language_code="te-IN")
                     orig = getattr(stt_res, 'transcript', '') or str(stt_res)
                 st.info(f"You said: {orig}")
-                # Save original text for other user to translate to his language
+                # Save for OTHER user - common file
                 open(f"room_data/{st.session_state.room}_{st.session_state.my_id}_last.txt","w",encoding="utf-8").write(orig)
-                # Also save wav path
-                open(f"room_data/{st.session_state.room}_{st.session_state.my_id}_last_wav.txt","w").write(in_path)
+                # Also save in room broadcast file
+                open(f"room_data/{st.session_state.room}_broadcast_{int(time.time())}_{st.session_state.my_id}.txt","w",encoding="utf-8").write(orig)
             except Exception as e:
                 st.error(f"STT Error: {e}")
 
 st.divider()
-st.markdown(f"### 🔊 Incoming - Neeku {st.session_state.my_listen_lang} lo vinipistundi")
-# Fetch other users last message and translate to MY language
-for uid in users:
-    if uid==st.session_state.my_id: continue
-    txt_path=f"room_data/{st.session_state.room}_{uid}_last.txt"
-    if os.path.exists(txt_path) and time.time()-os.path.getmtime(txt_path)<300:
-        orig_text=open(txt_path,"r",encoding="utf-8").read()
-        if orig_text:
-            try:
-                tgt_code=lang_map[st.session_state.my_listen_lang]
-                # Translate other person's text to MY listening language
+st.markdown(f"### 🔊 Incoming - Neeku {st.session_state.my_listen_lang} lo")
+# FIX 2: Avathala vadu matladindi naku na language lo auto translate
+broadcasts=sorted(glob.glob(f"room_data/{st.session_state.room}_broadcast_*.txt"), reverse=True)[:5]
+if not broadcasts:
+    st.caption("Inka voice raledu - rendu phones lo SAME room code enter chey")
+for bfile in broadcasts:
+    try:
+        if st.session_state.my_id in bfile: continue
+        mtime=os.path.getmtime(bfile)
+        if time.time()-mtime>300: continue
+        orig_text=open(bfile,"r",encoding="utf-8").read()
+        sender=bfile.split("_")[-1].replace(".txt","")
+        if not orig_text: continue
+        
+        tgt_code=lang_map[st.session_state.my_listen_lang]
+        cache_audio=f"room_data/{st.session_state.room}_to_{st.session_state.my_id}_from_{sender}_{int(mtime)}_{st.session_state.my_listen_lang}.wav"
+        
+        if not os.path.exists(cache_audio):
+            with st.spinner(f"Translating to {st.session_state.my_listen_lang}..."):
                 trans_res = client.text.translate(input=orig_text, source_language_code="auto", target_language_code=tgt_code, model="mayura:v1")
                 translated = getattr(trans_res, 'translated_text', orig_text)
-                st.markdown(f"**{uid} said:** {orig_text} -> **{st.session_state.my_listen_lang}:** {translated}")
-                # TTS in my language
-                if st.button(f"🔊 Play in {st.session_state.my_listen_lang} - {uid}",key=f"play{uid}{int(time.time())}"):
-                    tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, speaker="anushka", model="bulbul:v2")
-                    audio_b64 = tts_res.audios[0] if hasattr(tts_res,'audios') else None
-                    if audio_b64:
-                        try: data=base64.b64decode(audio_b64)
-                        except: data=audio_b64 if isinstance(audio_b64,bytes) else str(audio_b64).encode()
-                        out_path=f"room_data/play_{st.session_state.my_id}_{uid}.wav"
-                        open(out_path,"wb").write(data)
-                        st.audio(out_path, autoplay=True)
-            except Exception as e:
-                st.error(f"Translate Error: {e}")
+                tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, speaker="anushka", model="bulbul:v2")
+                audio_b64 = tts_res.audios[0] if hasattr(tts_res,'audios') else None
+                if audio_b64:
+                    try: data=base64.b64decode(audio_b64)
+                    except: data=audio_b64.encode() if isinstance(audio_b64,str) else audio_b64
+                    open(cache_audio,"wb").write(data)
+                    open(cache_audio.replace(".wav",".txt"),"w",encoding="utf-8").write(f"{orig_text} -> {translated}")
+        
+        if os.path.exists(cache_audio):
+            txt_info=""
+            if os.path.exists(cache_audio.replace(".wav",".txt")):
+                txt_info=open(cache_audio.replace(".wav",".txt"),"r",encoding="utf-8").read()
+            st.markdown(f"**From {sender}:** {txt_info}")
+            st.audio(cache_audio, autoplay=True)
+    except Exception as e:
+        st.error(f"Translate Error: {e}")
 
-if st.button("🔄 Refresh to get new voice",use_container_width=True):
+if st.button("🔄 Refresh to get new translated voice",use_container_width=True, type="primary"):
     st.rerun()
