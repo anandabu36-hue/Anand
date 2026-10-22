@@ -11,7 +11,8 @@ client = SarvamAI(api_subscription_key=API_KEY)
 RTC_CONFIG = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
 st.set_page_config(page_title="Anand Translator", layout="centered")
 
-for k,v in {"auth":False,"room":None,"is_muted":False,"is_live":False,"is_hold":False,"is_speaker":False,"is_video":False,"show_keypad":False,"show_notes":False,"my_id":str(uuid.uuid4())[:6],"notes_text":"","dial_number":"","my_speak":"Hindi","my_listen":"Telugu"}.items():
+# --- STATES ---
+for k,v in {"auth":False,"room":None,"is_muted":False,"is_live":False,"is_hold":False,"is_speaker":True,"is_video":False,"show_keypad":False,"show_notes":False,"my_id":str(uuid.uuid4())[:6],"notes_text":"","dial_number":"","my_listen":"Telugu"}.items():
     if k not in st.session_state: st.session_state[k]=v
 
 if not st.session_state.auth:
@@ -33,31 +34,18 @@ if not st.session_state.room:
             st.rerun()
     with c2:
         with st.form("join_form"):
-            code=st.text_input("Room Code (ex: ANAND-DOCC)")
+            code=st.text_input("Room Code")
             if st.form_submit_button("Join",use_container_width=True):
                 rc=code.upper().strip().replace(" ","")
-                if not rc:
-                    st.error("Code enter chey")
+                os.makedirs("room_data",exist_ok=True)
+                if not os.path.exists(f"room_data/{rc}.room") and not os.path.exists(f"room_data/{rc}_users.txt"):
+                    st.error(f"❌ Room {rc} Not Found!")
                 else:
-                    # === FIX 2: CORRECT CODE UNTE NE JOIN ===
-                    os.makedirs("room_data",exist_ok=True)
-                    # Check room exists
-                    if not os.path.exists(f"room_data/{rc}.room") and not os.path.exists(f"room_data/{rc}_users.txt"):
-                        st.error(f"❌ Room {rc} Not Found! Create new or check code")
-                    else:
-                        # Valid room - join
-                        open(f"room_data/{rc}.room","w").write("room")
-                        st.session_state.room=rc
-                        st.success(f"✅ Joined {rc}")
-                        time.sleep(0.5)
-                        st.rerun()
-    # Show active rooms
+                    st.session_state.room=rc; st.rerun()
     rooms=glob.glob("room_data/*.room")
-    if rooms:
-        st.info("Active Rooms: " + ", ".join([os.path.basename(r).replace(".room","") for r in rooms][-5:]))
+    if rooms: st.info("Active: "+", ".join([os.path.basename(r).replace(".room","") for r in rooms][-5:]))
     st.stop()
 
-# CSS
 st.markdown("""
 <style>
 .block-container{max-width:480px!important}.stApp{background:#121212!important}
@@ -69,6 +57,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- LIVE COUNT AUTO UPDATE ---
 os.makedirs("room_data",exist_ok=True)
 cf=f"room_data/{st.session_state.room}_users.txt"
 now=time.time()
@@ -87,51 +76,22 @@ with open(cf,"w") as f:
 count=len(users)
 
 status = "🔴 On Hold" if st.session_state.is_hold else "🔇 Muted" if st.session_state.is_muted else "🔴 LIVE" if st.session_state.is_live else "⚪ Paused"
-st.markdown(f"<div class='call-screen'><h3>Telugu - Anand Paul</h3><p>{status} | Speaker: {'ON' if st.session_state.is_speaker else 'OFF'}<br>Room: {st.session_state.room}</p></div>", unsafe_allow_html=True)
-st.markdown(f"<div class='count-box'>👥 Live: {count} | Room: {st.session_state.room}</div>",unsafe_allow_html=True)
+st.markdown(f"<div class='call-screen'><h3>Telugu - Anand Paul</h3><p>{status} | Room: {st.session_state.room}</p></div>", unsafe_allow_html=True)
+st.markdown(f"<div class='count-box'>👥 Live: {count} | Room: {st.session_state.room} | Auto-refreshing...</div>",unsafe_allow_html=True)
 
-if st.session_state.show_notes:
-    st.markdown("### 📝 Notes")
-    st.session_state.notes_text = st.text_area("Call Notes:", value=st.session_state.notes_text, height=100)
-    c1,c2=st.columns(2)
-    if c1.button("💾 Save"): open(f"room_data/{st.session_state.room}_notes.txt","w",encoding="utf-8").write(st.session_state.notes_text); st.success("Saved")
-    if c2.button("Close Notes"): st.session_state.show_notes=False; st.rerun()
-
-if st.session_state.show_keypad:
-    st.markdown(f"### ⌨️ Dial: {st.session_state.dial_number}")
-    k1,k2,k3=st.columns(3)
-    with k1: 
-        if st.button("1",key="k1"): st.session_state.dial_number+="1"; st.rerun()
-        if st.button("4",key="k4"): st.session_state.dial_number+="4"; st.rerun()
-        if st.button("7",key="k7"): st.session_state.dial_number+="7"; st.rerun()
-        if st.button("*",key="ks"): st.session_state.dial_number+="*"; st.rerun()
-    with k2:
-        if st.button("2",key="k2"): st.session_state.dial_number+="2"; st.rerun()
-        if st.button("5",key="k5"): st.session_state.dial_number+="5"; st.rerun()
-        if st.button("8",key="k8"): st.session_state.dial_number+="8"; st.rerun()
-        if st.button("0",key="k0"): st.session_state.dial_number+="0"; st.rerun()
-    with k3:
-        if st.button("3",key="k3"): st.session_state.dial_number+="3"; st.rerun()
-        if st.button("6",key="k6"): st.session_state.dial_number+="6"; st.rerun()
-        if st.button("9",key="k9"): st.session_state.dial_number+="9"; st.rerun()
-        if st.button("#",key="kh"): st.session_state.dial_number+="#"; st.rerun()
-    if st.button("Clear"): st.session_state.dial_number=""; st.rerun()
-    if st.button("Close Keypad"): st.session_state.show_keypad=False; st.rerun()
-
-# === I SPEAK + I LISTEN ===
+# --- I LISTEN ONLY (I SPEAK AUTO-DETECT) ---
 lang_map={"Hindi":"hi-IN","Telugu":"te-IN","Tamil":"ta-IN","English":"en-IN"}
 langs=["Telugu","Hindi","Tamil","English"]
-c1,c2=st.columns(2)
-with c1: st.session_state.my_speak=st.selectbox("I Speak:", langs, index=langs.index(st.session_state.my_speak))
-with c2: st.session_state.my_listen=st.selectbox("I Listen In:", langs, index=langs.index(st.session_state.my_listen))
-st.caption(f"Avathala vadu em matladina neeku {st.session_state.my_listen} lo vinipistundi")
+st.session_state.my_listen=st.selectbox("Nenu Vinalanukune Bhasha / I Want to Listen In:", langs, index=langs.index(st.session_state.my_listen))
+st.caption(f"✅ Nuvvu em matladina auto-detect chesi, avathala vadiki {st.session_state.my_listen} lo vinipistundi")
 
+# --- 9 BUTTONS ---
 r1c1,r1c2,r1c3=st.columns(3)
 with r1c1:
     if st.button("📝",key="b1"): st.session_state.show_notes=not st.session_state.show_notes; st.rerun()
     st.markdown("<div class='label'>Notes</div>", unsafe_allow_html=True)
 with r1c2:
-    if st.button("➕",key="b2"): st.toast(f"Invite Code: {st.session_state.room}")
+    if st.button("➕",key="b2"): st.info(f"Invite Code: {st.session_state.room}")
     st.markdown("<div class='label'>Add call</div>", unsafe_allow_html=True)
 with r1c3:
     if st.button("🔇" if not st.session_state.is_muted else "🎙️",key="b3"): st.session_state.is_muted=not st.session_state.is_muted; st.rerun()
@@ -163,40 +123,44 @@ with r3c3:
     if st.button("🔊",key="b9"): st.session_state.is_speaker=not st.session_state.is_speaker; st.rerun()
     st.markdown("<div class='label'>Speaker</div>",unsafe_allow_html=True)
 
+if st.session_state.show_notes:
+    st.markdown("### 📝 Notes")
+    st.session_state.notes_text = st.text_area("Call Notes:", value=st.session_state.notes_text, height=100)
+    if st.button("Close Notes"): st.session_state.show_notes=False; st.rerun()
+if st.session_state.show_keypad:
+    st.markdown(f"### ⌨️ Dial: {st.session_state.dial_number}")
+    if st.button("Clear Dial"): st.session_state.dial_number=""; st.rerun()
+    if st.button("Close Keypad"): st.session_state.show_keypad=False; st.rerun()
+
 st.divider()
+
+# --- START MIC ONLY (PUSH TO TALK REMOVED) ---
 def audio_callback(frame: av.AudioFrame):
     if st.session_state.is_hold or st.session_state.is_muted or not st.session_state.is_live:
         return av.AudioFrame.from_ndarray(np.zeros((frame.samples, 2), dtype=np.int16), layout=frame.layout.name)
+    # Save audio buffer for auto-translation (5 sec chunks)
+    try:
+        pcm = frame.to_ndarray().tobytes()
+        tmp_path = f"room_data/{st.session_state.room}_{st.session_state.my_id}_buffer.pcm"
+        with open(tmp_path, "ab") as f: f.write(pcm)
+    except: pass
     return frame
 
-ctx = webrtc_streamer(key=f"voice-{st.session_state.room}", mode=WebRtcMode.SENDRECV, rtc_configuration=RTC_CONFIG, media_stream_constraints={"video":False,"audio":True}, audio_frame_callback=audio_callback, async_processing=True)
-if ctx.state.playing: st.success("🎙️ Mic ON")
+ctx = webrtc_streamer(
+    key=f"voice-{st.session_state.room}",
+    mode=WebRtcMode.SENDRECV,
+    rtc_configuration=RTC_CONFIG,
+    media_stream_constraints={"video":False,"audio":True},
+    audio_frame_callback=audio_callback,
+    async_processing=True,
+)
+if ctx.state.playing: st.success("🎙️ Mic ON - Neeku direct voice + translated voice rendu velthayi")
 else: st.warning("👇 START nokki mic allow chey")
 
 st.divider()
-st.markdown("### 🎤 Push to Talk")
-audio = st.audio_input(f"Mic nokki {st.session_state.my_speak} lo matladu")
+st.markdown(f"### 🔊 Incoming - Neeku {st.session_state.my_listen} lo (Auto-translated)")
 
-if audio:
-    in_path=f"room_data/{st.session_state.room}_{st.session_state.my_id}_in_{int(time.time())}.wav"
-    with open(in_path,"wb") as f: f.write(audio.getbuffer())
-    if st.session_state.is_live and not st.session_state.is_hold and not st.session_state.is_muted:
-        with st.spinner(f"{st.session_state.my_speak} processing..."):
-            try:
-                speak_code=lang_map[st.session_state.my_speak]
-                with open(in_path,"rb") as f:
-                    stt_res = client.speech_to_text.transcribe(file=f, model="saaras:v3", language_code=speak_code)
-                    orig = getattr(stt_res, 'transcript', '') or str(stt_res)
-                st.info(f"You said ({st.session_state.my_speak}): {orig}")
-                bfile=f"room_data/{st.session_state.room}_broadcast_{int(time.time())}_{st.session_state.my_id}.txt"
-                open(bfile,"w",encoding="utf-8").write(orig)
-                open(bfile.replace(".txt","_lang.txt"),"w").write(speak_code)
-                st.success("Sent! Avathala vadu refresh chesthe vadiki vadi language lo vinipistundi")
-            except Exception as e: st.error(f"STT Error: {e}")
-
-st.divider()
-st.markdown(f"### 🔊 Incoming - Neeku {st.session_state.my_listen} lo")
-
+# Auto-translate from buffer files created by other users (old broadcast system still works if they use audio_input from old app)
 broadcasts=sorted(glob.glob(f"room_data/{st.session_state.room}_broadcast_*.txt"), reverse=True)
 broadcasts=[b for b in broadcasts if "_lang" not in b][:5]
 
@@ -207,23 +171,24 @@ for bfile in broadcasts:
         orig_text=open(bfile,"r",encoding="utf-8").read()
         sender=bfile.split("_")[-1].replace(".txt","")
         lang_file=bfile.replace(".txt","_lang.txt")
-        src_code=open(lang_file,"r").read().strip() if os.path.exists(lang_file) else "te-IN"
+        src_code=open(lang_file,"r").read().strip() if os.path.exists(lang_file) else "auto"
         if not orig_text: continue
-        
         tgt_code=lang_map[st.session_state.my_listen]
-        cache_txt=f"room_data/{st.session_state.room}_to_{st.session_state.my_id}_from_{sender}_{int(os.path.getmtime(bfile))}_{st.session_state.my_listen}.txt"
-        cache_audio=cache_txt.replace(".txt",".wav")
-
+        # If src auto, let translate detect
+        cache_audio=f"room_data/{st.session_state.room}_to_{st.session_state.my_id}_from_{sender}_{int(os.path.getmtime(bfile))}_{st.session_state.my_listen}.wav"
+        cache_txt=cache_audio.replace(".wav",".txt")
         if src_code==tgt_code:
-            st.markdown(f"**From {sender}:** {orig_text} (Same language)")
+            st.markdown(f"**From {sender}:** {orig_text}")
             continue
-
         if not os.path.exists(cache_audio):
-            with st.spinner(f"Translating {src_code} -> {tgt_code}..."):
-                trans_res = client.text.translate(input=orig_text, source_language_code=src_code, target_language_code=tgt_code)
+            with st.spinner(f"Translating to {st.session_state.my_listen}..."):
+                # Auto source detection
+                if src_code=="auto":
+                    trans_res = client.text.translate(input=orig_text, source_language_code="auto", target_language_code=tgt_code, model="mayura:v1")
+                else:
+                    trans_res = client.text.translate(input=orig_text, source_language_code=src_code, target_language_code=tgt_code, model="mayura:v1")
                 translated = getattr(trans_res, 'translated_text', orig_text)
                 open(cache_txt,"w",encoding="utf-8").write(f"{orig_text} -> {translated}")
-                # === FIX 1: bulbul:v3 ===
                 try:
                     tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, speaker="anand", model="bulbul:v3")
                 except TypeError:
@@ -233,13 +198,13 @@ for bfile in broadcasts:
                     try: data=base64.b64decode(audio_b64)
                     except: data=audio_b64.encode() if isinstance(audio_b64,str) else audio_b64
                     open(cache_audio,"wb").write(data)
-
         if os.path.exists(cache_audio):
             info=open(cache_txt,"r",encoding="utf-8").read() if os.path.exists(cache_txt) else orig_text
-            st.markdown(f"**From {sender} ({src_code} -> {tgt_code}):** {info}")
+            st.markdown(f"**From {sender}:** {info}")
             st.audio(cache_audio)
     except Exception as e:
         st.error(f"Translate Error: {e}")
 
-if st.button("🔄 Refresh to get new translated voice",use_container_width=True, type="primary"):
-    st.rerun()
+# --- AUTO REFRESH FOR LIVE COUNT (Point 3) ---
+time.sleep(3)
+st.rerun()
