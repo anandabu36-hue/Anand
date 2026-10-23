@@ -31,7 +31,6 @@ if not st.session_state.room:
     with c1:
         if st.button("📞 Create Call",use_container_width=True,type="primary"):
             st.session_state.room=f"ANAND-{str(uuid.uuid4())[:5].upper()}"
-            open(f"room_data/{st.session_state.room}.room","w").write("room")
             st.rerun()
     with c2:
         with st.form("join"):
@@ -48,47 +47,49 @@ c1,c2=st.columns(2)
 with c1: st.session_state.my_speak=st.selectbox("I Speak", ["Hindi","Telugu","Tamil","English"], 0)
 with c2: st.session_state.my_listen=st.selectbox("I Listen", ["Telugu","Hindi","Tamil","English"], 1)
 
-# SENDONLY = no echo
 ctx = webrtc_streamer(key=f"call-{st.session_state.room}-{st.session_state.my_id}", mode=WebRtcMode.SENDONLY, rtc_configuration=RTC_CONFIG, media_stream_constraints={"video":False,"audio":True}, audio_receiver_size=1024, async_processing=True)
 
 def send_to_supabase():
-    if not st.session_state.buffer:
-        st.warning("Buffer empty - mic allow chesava? Loud ga matladu")
-        return
-    if st.session_state.auto_lock: return
+    if not st.session_state.buffer or st.session_state.auto_lock: return
     st.session_state.auto_lock=True
     try:
         all_audio=np.concatenate(st.session_state.buffer)
-        st.write(f"DEBUG: Collected {len(all_audio)} samples")
         st.session_state.buffer=[]; st.session_state.is_speaking=False
-        wav=f"room_data/{st.session_state.my_id}.wav"
+        
+        # FIX: 48kHz -> 16kHz resample (Sarvam needs 16k)
+        # Take every 3rd sample
+        resampled = all_audio[::3]
+        st.write(f"DEBUG: {len(all_audio)} -> resampled {len(resampled)} (48k->16k)")
+        
+        wav=f"room_data/{st.session_state.my_id}_16k.wav"
         with wave.open(wav,'wb') as wf:
-            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(48000)
-            wf.writeframes(all_audio.astype(np.int16).tobytes())
+            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
+            wf.writeframes(resampled.astype(np.int16).tobytes())
+        
         with open(wav,"rb") as f:
             stt=client.speech_to_text.transcribe(file=f, model="saaras:v3", language_code=lang_map[st.session_state.my_speak])
             orig=getattr(stt,'transcript','')
+        
         st.write(f"DEBUG STT: '{orig}'")
         if orig and len(orig.strip())>1:
             payload={"room_id":st.session_state.room,"room_code":st.session_state.room,"sender_id":st.session_state.my_id,"text":orig,"src_lang":lang_map[st.session_state.my_speak],"src_name":st.session_state.my_speak}
             res=supabase.table("broadcasts").insert(payload).execute()
-            st.success(f"✅ SENT TO SUPABASE! Other phone ki veltundi: {orig}")
+            st.success(f"✅ SENT! Other phone ki veltundi: {orig}")
         else:
-            st.error("STT empty - mic volume penchu, daggara matladu")
+            st.error("STT empty - loud ga malli cheppu")
     except Exception as e:
-        st.error(f"SEND ERROR: {e}")
+        st.error(f"❌ FULL ERROR: {e}")
+        st.write(f"Error type: {type(e)}")
     finally:
         st.session_state.auto_lock=False
 
-# AUDIO COLLECT - Threshold chala takkuva
 if ctx and ctx.state.playing and ctx.audio_receiver:
     try:
         frames=ctx.audio_receiver.get_frames(timeout=1)
         for fr in frames:
             arr=fr.to_ndarray(); pcm=arr.mean(axis=0) if arr.ndim==2 else arr.flatten()
             en=np.sqrt(np.mean(pcm.astype(float)**2))
-            # ULTRA LOW THRESHOLD - phone mic ki
-            if en>80:
+            if en>60: # Ultra low threshold for phone
                 st.session_state.last_speech=time.time()
                 st.session_state.is_speaking=True
                 st.session_state.buffer.append(pcm)
@@ -97,47 +98,37 @@ if ctx and ctx.state.playing and ctx.audio_receiver:
     except: pass
     
     if st.session_state.buffer:
-        st.caption(f"🎙️ Recording... {len(st.session_state.buffer)} chunks | Last energy time: {int(time.time()-st.session_state.last_speech)}s ago - 2.5s silent aithe auto send")
+        st.info(f"🎙️ Recording {len(st.session_state.buffer)} chunks | Stop talking 2.5s -> auto send")
 
-    # Auto send after 2.5 sec silence
     if st.session_state.is_speaking and (time.time()-st.session_state.last_speech)>2.5 and len(st.session_state.buffer)>5:
-        send_to_supabase()
-        st.rerun()
+        send_to_supabase(); st.rerun()
 
-    # MANUAL SEND BUTTON - Auto fail ayithe idi noku
-    if st.session_state.buffer and st.button("📤 SEND NOW (Manual)", use_container_width=True, type="primary"):
-        send_to_supabase()
-        st.rerun()
+    if st.session_state.buffer and st.button("📤 SEND NOW", type="primary", use_container_width=True):
+        send_to_supabase(); st.rerun()
 else:
-    st.warning("⚠️ Click START and ALLOW microphone")
+    st.warning("Click START and ALLOW mic")
 
 st.divider()
 
 @st.fragment(run_every=2)
 def incoming():
-    st.write(f"Incoming ({st.session_state.my_listen}) - Other phone voice")
     try:
         res=supabase.table("broadcasts").select("*").eq("room_id",st.session_state.room).neq("sender_id",st.session_state.my_id).order("created_at",desc=True).limit(1).execute()
-        if not res.data:
-            st.caption("Waiting... vere phone same room code tho join ayyi matladali")
+        if not res.data: 
+            st.caption("Waiting for other phone...")
             return
         r=res.data[0]
-        if r["sender_id"]==st.session_state.my_id: return
         orig=r["text"]; src=r["src_lang"]; src_name=r["src_name"]
         tgt=lang_map[st.session_state.my_listen]
         translated = orig if src==tgt else getattr(client.text.translate(input=orig, source_language_code=src, target_language_code=tgt, model="mayura:v1"),'translated_text',orig)
-        st.success(f"👤 {src_name}: {orig} -> {st.session_state.my_listen}: {translated}")
+        st.success(f"👤 {src_name} ({r['sender_id']}): {orig} -> {st.session_state.my_listen}: {translated}")
         fpath=f"room_data/play_{r['id']}.wav"
         tts=client.text_to_speech.convert(text=translated, target_language_code=tgt, model="bulbul:v3")
         open(fpath,"wb").write(base64.b64decode(tts.audios[0]))
         st.audio(fpath, autoplay=True)
     except Exception as e:
-        st.error(f"{e}")
+        st.error(f"Fetch error: {e}")
 
 incoming()
-
-if st.button("Clear History"): 
-    supabase.table("broadcasts").delete().eq("room_id",st.session_state.room).execute()
-    st.success("Cleared")
-
+if st.button("Clear History"): supabase.table("broadcasts").delete().eq("room_id",st.session_state.room).execute(); st.success("Cleared")
 if st.button("End Call"): st.session_state.room=None; st.rerun()
