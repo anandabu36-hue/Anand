@@ -11,7 +11,7 @@ client = SarvamAI(api_subscription_key=API_KEY)
 RTC_CONFIG = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
 st.set_page_config(page_title="Anand Translator", layout="centered")
 
-for k,v in {"auth":False,"room":None,"my_id":str(uuid.uuid4())[:6],"my_listen":"Telugu","buffer":[],"last_speech":0,"is_speaking":False,"call_start":0,"auto_lock":False}.items():
+for k,v in {"auth":False,"room":None,"my_id":str(uuid.uuid4())[:6].upper(),"my_listen":"Telugu","buffer":[],"last_speech":0,"is_speaking":False,"call_start":0,"auto_lock":False}.items():
     if k not in st.session_state: st.session_state[k]=v
 
 if not st.session_state.auth:
@@ -24,7 +24,7 @@ if not st.session_state.auth:
 os.makedirs("room_data",exist_ok=True)
 
 if not st.session_state.room:
-    st.markdown("<div style='background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:24px;padding:28px;color:white;text-align:center'><h2>📞 Anand Translator</h2><p>Fixed Translate - Telugu/Hindi/Tamil</p></div>", unsafe_allow_html=True)
+    st.markdown("<div style='background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:24px;padding:28px;color:white;text-align:center'><h2>📞 Anand Translator</h2><p>Fixed - No Self Echo</p></div>", unsafe_allow_html=True)
     c1,c2=st.columns(2)
     with c1:
         if st.button("📞 Create Call",use_container_width=True,type="primary"):
@@ -32,7 +32,6 @@ if not st.session_state.room:
             st.session_state.room=new_room
             st.session_state.call_start=time.time()
             open(f"room_data/{new_room}.room","w").write("room")
-            open(f"room_data/{new_room}_users.txt","w").write(f"{st.session_state.my_id}|{time.time()}\n")
             st.rerun()
     with c2:
         with st.form("join_form"):
@@ -50,42 +49,23 @@ if not st.session_state.room:
 st.markdown("""
 <style>
 .block-container{max-width:400px!important}.stApp{background:#0a0a0f!important}
-.call-header{background:linear-gradient(180deg,#1c1c24 0%,#0a0a0f 100%);border-radius:24px;padding:20px;text-align:center;border:1px solid #222}
-.timer{color:#10b981;font-weight:700;font-size:14px}
-.pulse-ring{animation:pulse 1.8s infinite}
-@keyframes pulse{0%{transform:scale(0.95);box-shadow:0 0 0 0 rgba(102,126,234,0.7)}70%{transform:scale(1);box-shadow:0 0 0 20px rgba(102,126,234,0)}100%{transform:scale(0.95);box-shadow:0 0 0 0 rgba(102,126,234,0)}}
-.incoming-card{background:#1c1c24;border-radius:16px;padding:14px;margin:10px 0;border-left:4px solid #667eea}
-.translated{color:#10b981;font-weight:600}
-.original{color:#888;font-size:12px}
+.call-header{background:#1c1c24;border-radius:24px;padding:18px;text-align:center;border:1px solid #222}
+.timer{color:#10b981;font-weight:700}
+.incoming-card{background:#1c1c24;border-radius:16px;padding:12px;margin:8px 0;border-left:4px solid #667eea}
+.self-card{border-left:4px solid #555;background:#222}
 </style>
 """, unsafe_allow_html=True)
 
-cf=f"room_data/{st.session_state.room}_users.txt"
+# Live count
 now=time.time()
-users={}
-if os.path.exists(cf):
-    with open(cf,"r") as f:
-        for l in f:
-            if "|" in l:
-                try:
-                    uid,t=l.strip().split("|")
-                    if now-float(t)<60: users[uid]=float(t)
-                except: pass
-users[st.session_state.my_id]=now
-with open(cf,"w") as f:
-    for uid,t in users.items(): f.write(f"{uid}|{t}\n")
-
-call_duration = int(now - st.session_state.call_start) if st.session_state.call_start else 0
-mins, secs = divmod(call_duration, 60)
-st.markdown(f"<div class='call-header'><h3 style='color:white;margin:0'>Room {st.session_state.room}</h3><p style='color:#888;margin:4px 0'>ID: {st.session_state.my_id} • 👥 {len(users)} online</p><div class='timer'>⏱️ {mins:02d}:{secs:02d} • Auto Translate ON</div></div>", unsafe_allow_html=True)
+st.markdown(f"<div class='call-header'><h3 style='color:white;margin:0'>Room {st.session_state.room}</h3><p style='color:#888;margin:4px 0'>My ID: {st.session_state.my_id} • 👥 Live</p><div class='timer'>Auto Translate ON • No Self Play</div></div>", unsafe_allow_html=True)
 
 lang_map={"Hindi":"hi-IN","Telugu":"te-IN","Tamil":"ta-IN","English":"en-IN"}
-st.session_state.my_listen=st.selectbox("Nenu Vinalanukune Bhasha:", ["Telugu","Hindi","Tamil","English"])
+st.session_state.my_listen=st.selectbox("Nenu Vinalanukune Bhasha (I Listen):", ["Telugu","Hindi","Tamil","English"])
 
-st.divider()
 ctx = webrtc_streamer(
-    key=f"call-{st.session_state.room}",
-    mode=WebRtcMode.SENDRECV,
+    key=f"call-{st.session_state.room}-{st.session_state.my_id}",
+    mode=WebRtcMode.SENDONLY,
     rtc_configuration=RTC_CONFIG,
     media_stream_constraints={"video":False,"audio":True},
     audio_receiver_size=1024,
@@ -93,7 +73,7 @@ ctx = webrtc_streamer(
 )
 
 def process_buffer():
-    if st.session_state.auto_lock or len(st.session_state.buffer) < 15:
+    if st.session_state.auto_lock or len(st.session_state.buffer) < 10:
         return
     st.session_state.auto_lock = True
     try:
@@ -108,20 +88,19 @@ def process_buffer():
             try: stt_res = client.speech_to_text.transcribe(file=f, model="saaras:v3")
             except:
                 f.seek(0)
-                stt_res = client.speech_to_text.transcribe(file=f, model="saaras:v3", language_code="hi-IN")
+                stt_res = client.speech_to_text.transcribe(file=f, model="saaras:v3", language_code="auto")
             orig = getattr(stt_res, 'transcript', '') or str(stt_res)
         if orig and len(orig.strip())>1:
-            # Save original - receiver will translate to his language
             bfile=f"room_data/{st.session_state.room}_broadcast_{int(time.time())}_{st.session_state.my_id}.txt"
             open(bfile,"w",encoding="utf-8").write(orig)
-            st.toast(f"✅ Sent: {orig[:50]}")
+            st.toast(f"✅ Sent to others: {orig[:40]}")
     except Exception as e:
         st.error(f"STT Error: {e}")
     finally:
         st.session_state.auto_lock = False
 
 if ctx and ctx.state.playing:
-    st.markdown("<div class='pulse-ring' style='text-align:center;color:#10b981;font-weight:700'>🔴 AUTO LISTENING - 2 sec gap = Auto Sent + Translated</div>", unsafe_allow_html=True)
+    st.success("🔴 LIVE - Matladu! 2 sec gap = Auto Sent to OTHER phone only")
     if ctx.audio_receiver:
         try:
             frames = ctx.audio_receiver.get_frames(timeout=0.4)
@@ -129,7 +108,7 @@ if ctx and ctx.state.playing:
                 arr = frame.to_ndarray()
                 pcm = arr.mean(axis=0) if arr.ndim==2 else arr.flatten()
                 energy = np.sqrt(np.mean(pcm.astype(float)**2))
-                if energy > 400:
+                if energy > 350:
                     st.session_state.last_speech = time.time()
                     st.session_state.is_speaking = True
                     st.session_state.buffer.append(pcm)
@@ -137,53 +116,59 @@ if ctx and ctx.state.playing:
                     st.session_state.buffer.append(pcm)
         except: pass
     if st.session_state.is_speaking and (time.time() - st.session_state.last_speech) > 2.0:
-        if len(st.session_state.buffer) > 20:
-            with st.spinner("Auto Sending..."):
+        if len(st.session_state.buffer) > 15:
+            with st.spinner("Sending to other phone..."):
                 process_buffer()
-            st.success("✅ Sent! Continue speaking...")
-            time.sleep(0.3)
             st.rerun()
 else:
-    st.warning("👇 START nokki matladu - auto translate ayyi vere phone ki velluthundi")
-    st.session_state.buffer = []
+    st.warning("👇 START nokku - ne voice avathala phone ki mathrame velluthundi, neeke vinipinchadu")
 
 st.divider()
 
 @st.fragment(run_every=2)
 def auto_incoming():
-    st.markdown(f"### 🔊 Incoming - {st.session_state.my_listen} lo vini")
+    st.markdown(f"### 🔊 Incoming - {st.session_state.my_listen} lo ONLY (Others voice)")
     
-    # IMPORTANT: Language change detect - clear old cache logic
-    broadcasts=sorted(glob.glob(f"room_data/{st.session_state.room}_broadcast_*.txt"), reverse=True)[:5]
-    found=False
-    for bfile in broadcasts:
+    all_files = sorted(glob.glob(f"room_data/{st.session_state.room}_broadcast_*.txt"), reverse=True)
+    
+    # DEBUG - meeke telusthundi em files unnai ani
+    st.caption(f"Debug: Room lo {len(all_files)} files | My ID: {st.session_state.my_id}")
+    
+    found_other=False
+    for bfile in all_files[:10]:
         try:
-            if st.session_state.my_id in bfile: continue
-            if time.time()-os.path.getmtime(bfile)>300: continue
-            orig_text=open(bfile,"r",encoding="utf-8").read().strip()
-            if not orig_text: continue
-            found=True
-            sender=bfile.split("_")[-1].replace(".txt","")
-            tgt_code=lang_map[st.session_state.my_listen]
+            # FIXED: Exact sender ID extraction - self echo 100% poyindi
+            basename = os.path.basename(bfile)
+            sender_id = basename.split("_")[-1].replace(".txt","").strip().upper()
+            my_id_clean = st.session_state.my_id.strip().upper()
             
-            # Cache file with language name - language marchithe kotha file create avuthundi
+            # Nee own file ayithe 100% skip - neeke vinipinchadu
+            if sender_id == my_id_clean:
+                continue
+            
+            if time.time()-os.path.getmtime(bfile)>300:
+                continue
+                
+            orig_text=open(bfile,"r",encoding="utf-8").read().strip()
+            if not orig_text or len(orig_text)<2:
+                continue
+                
+            found_other=True
+            tgt_code=lang_map[st.session_state.my_listen]
             mtime = int(os.path.getmtime(bfile))
-            cache_audio=f"room_data/{st.session_state.room}_to_{st.session_state.my_id}_from_{sender}_{mtime}_{st.session_state.my_listen}.wav"
+            
+            # Language tho cache - translate guarantee
+            cache_audio=f"room_data/{st.session_state.room}_to_{my_id_clean}_from_{sender_id}_{mtime}_{st.session_state.my_listen}.wav"
             cache_txt=cache_audio.replace(".wav",".txt")
             
-            # Always translate if cache missing
             if not os.path.exists(cache_audio):
-                with st.spinner(f"Translating {orig_text[:20]}... to {st.session_state.my_listen}"):
-                    # Step 1: Translate
+                with st.spinner(f"Translating {sender_id} voice to {st.session_state.my_listen}..."):
                     trans_res = client.text.translate(input=orig_text, source_language_code="auto", target_language_code=tgt_code, model="mayura:v1")
                     translated = getattr(trans_res, 'translated_text', '') or orig_text
-                    if not translated:
-                        translated = orig_text
                     
-                    # Step 2: Save debug text
-                    open(cache_txt,"w",encoding="utf-8").write(f"Original: {orig_text}\nTranslated to {st.session_state.my_listen}: {translated}")
+                    open(cache_txt,"w",encoding="utf-8").write(f"{orig_text} ||| {translated}")
                     
-                    # Step 3: TTS with translated text (IMPORTANT: translated ye use cheyali)
+                    # TTS with TRANSLATED text only
                     try:
                         tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, speaker="anand", model="bulbul:v3")
                     except:
@@ -196,19 +181,26 @@ def auto_incoming():
                         open(cache_audio,"wb").write(data)
             
             if os.path.exists(cache_audio):
-                debug_info = open(cache_txt,"r",encoding="utf-8").read() if os.path.exists(cache_txt) else f"Original: {orig_text}"
-                # Show translation clearly
-                if "Original:" in debug_info:
-                    lines = debug_info.split("\n")
-                    orig_line = lines[0].replace("Original: ","")
-                    trans_line = lines[1].replace(f"Translated to {st.session_state.my_listen}: ","") if len(lines)>1 else orig_line
-                    st.markdown(f"<div class='incoming-card'><div class='original'>👤 {sender} said (Hindi): {orig_line}</div><div class='translated'>🔊 Translated to {st.session_state.my_listen}: {trans_line}</div></div>", unsafe_allow_html=True)
+                txt_data = open(cache_txt,"r",encoding="utf-8").read() if os.path.exists(cache_txt) else orig_text
+                if "|||" in txt_data:
+                    orig_part, trans_part = txt_data.split("|||")
                 else:
-                    st.markdown(f"<div class='incoming-card'>{debug_info}</div>", unsafe_allow_html=True)
+                    orig_part, trans_part = orig_text, txt_data
+                
+                st.markdown(f"<div class='incoming-card'>👤 <b>{sender_id} (Original):</b> {orig_part}<br>🔊 <b>Translated to {st.session_state.my_listen}:</b> {trans_part}</div>", unsafe_allow_html=True)
                 st.audio(cache_audio, autoplay=True)
+                
         except Exception as e:
-            st.error(f"Translate Error: {e} - Original: {orig_text[:30]}")
-    if not found:
-        st.info(f"No messages in {st.session_state.room} - same room lo matladandi")
+            st.error(f"Error with {bfile}: {e}")
+    
+    if not found_other:
+        st.info(f"Waiting for OTHER phone voice in {st.session_state.room}... Nee voice neeke raadu, avathala phone matladithe ne vasthundi")
 
 auto_incoming()
+
+if st.button("🗑️ Clear Room (Test fresh)"):
+    for f in glob.glob(f"room_data/{st.session_state.room}_*"):
+        try: os.remove(f)
+        except: pass
+    st.success("Cleared - malla test chey")
+    st.rerun()
