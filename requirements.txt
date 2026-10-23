@@ -1,4 +1,2 @@
 streamlit
 streamlit-webrtc
-av
-numpy
