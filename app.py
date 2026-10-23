@@ -17,8 +17,8 @@ supabase = create_client(SUPA_URL, SUPA_KEY)
 
 st.set_page_config(page_title="Anand Translator", layout="centered", initial_sidebar_state="collapsed")
 
-# --- SESSION ---
-for k,v in {"auth":False,"room":None,"my_id":str(uuid.uuid4())[:6],"my_listen":"Telugu","call_start":0}.items():
+# --- SESSION --- FIX 1: my_speak added
+for k,v in {"auth":False,"room":None,"my_id":str(uuid.uuid4())[:6],"my_listen":"Telugu","my_speak":"Hindi","call_start":0}.items():
     if k not in st.session_state: st.session_state[k]=v
 
 if not st.session_state.auth:
@@ -41,7 +41,6 @@ if not st.session_state.room:
             new_code=f"ANAND-{str(uuid.uuid4())[:5].upper()}"
             st.session_state.room=new_code
             st.session_state.call_start=time.time()
-            # Create room marker in Supabase - so others can find it
             try:
                 supabase.table("broadcasts").insert({
                     "room_id": new_code,
@@ -58,11 +57,9 @@ if not st.session_state.room:
             submitted=st.form_submit_button("Join Call", use_container_width=True)
             if submitted:
                 rc=code.upper().strip().replace(" ","")
-                # Validation: ANAND- format lo undala
                 if not rc.startswith("ANAND-") or len(rc)<9:
                     st.error("❌ Invalid code! Format: ANAND-XXXXX")
                 else:
-                    # Check if room exists in Supabase
                     try:
                         res=supabase.table("broadcasts").select("room_id").eq("room_id", rc).limit(1).execute()
                         if not res.data:
@@ -71,8 +68,7 @@ if not st.session_state.room:
                             st.session_state.room=rc
                             st.session_state.call_start=time.time()
                             st.rerun()
-                    except Exception as e:
-                        # If Supabase error, allow but warn
+                    except:
                         st.session_state.room=rc
                         st.session_state.call_start=time.time()
                         st.rerun()
@@ -88,11 +84,7 @@ st.markdown("""
 .timer{color:#10b981;font-weight:700;font-size:13px;margin-top:8px}
 .live-dot{width:8px;height:8px;background:#10b981;border-radius:50%;display:inline-block;animation:blink 1s infinite}
 @keyframes blink{0%{opacity:1}50%{opacity:0.3}100%{opacity:1}}
-.lang-btn{background:linear-gradient(135deg,#10b981 0%,#059669 100%)!important;border-radius:50%!important;width:88px!important;height:88px!important;box-shadow:0 0 30px rgba(16,185,129,0.5)}
-.control-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin:16px 0}
-.control-item{text-align:center}
-.control-icon{width:56px;height:56px;background:#1f2937;border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:22px}
-.control-label{color:#9ca3af;font-size:11px;margin-top:6px}
+.control-label{color:#9ca3af;font-size:11px;margin-top:6px;text-align:center}
 .translate-banner{background:linear-gradient(90deg,#10b98122,#667eea22);border:1px solid #10b98144;border-radius:12px;padding:10px;text-align:center;color:#10b981;font-weight:600;font-size:13px;margin:12px 0}
 .incoming-card{background:#1c1c24;border-radius:16px;padding:14px;margin:10px 0;border-left:4px solid #10b981}
 </style>
@@ -100,10 +92,8 @@ st.markdown("""
 
 lang_map={"Hindi":"hi-IN","Telugu":"te-IN","Tamil":"ta-IN","English":"en-IN"}
 
-# Call Header
 dur=int(time.time()-st.session_state.call_start) if st.session_state.call_start else 0
 m,s=divmod(dur,60)
-users_count=1 # Supabase lo count cheyadam kastam, simple
 
 st.markdown(f"""
 <div class='call-header'>
@@ -114,11 +104,16 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Language Selection - The MAIN Feature
+# FIX 2 & 3: Both languages selection - Main feature
 st.markdown(f"<div class='translate-banner'>🌐 Translating: Live → {st.session_state.my_listen}</div>", unsafe_allow_html=True)
-st.session_state.my_listen=st.selectbox("Nenu Vinalanukune Bhasha / I Listen:", ["Telugu","Hindi","Tamil","English"], index=["Telugu","Hindi","Tamil","English"].index(st.session_state.my_listen), label_visibility="collapsed")
 
-# --- 9 BUTTONS LIKE REAL DIALER ---
+lc1,lc2=st.columns(2)
+with lc1:
+    st.session_state.my_speak=st.selectbox("I Speak / Nenu:", ["Hindi","Telugu","Tamil","English"], index=["Hindi","Telugu","Tamil","English"].index(st.session_state.my_speak))
+with lc2:
+    st.session_state.my_listen=st.selectbox("I Listen / Vintanu:", ["Telugu","Hindi","Tamil","English"], index=["Telugu","Hindi","Tamil","English"].index(st.session_state.my_listen))
+
+# 9 BUTTONS
 st.write("")
 r1c1,r1c2,r1c3=st.columns(3)
 with r1c1:
@@ -133,7 +128,7 @@ with r1c3:
 
 r2c1,r2c2,r2c3=st.columns(3)
 with r2c1:
-    st.button("🌐", key="lang", help="Language ON", disabled=True)
+    st.button("🌐", key="lang", disabled=True)
     st.markdown("<div class='control-label' style='color:#10b981!important;font-weight:700'>Language ON</div>", unsafe_allow_html=True)
 with r2c2:
     if st.button("📹", key="n5"): st.toast("Video soon")
@@ -157,25 +152,22 @@ with r3c3:
 
 st.divider()
 
-# --- STEP 1: THE ONLY MIC - 100% STABLE ---
+# MIC
 st.markdown("### 🎙️ Tap to Speak - Auto Translate")
-st.caption("Nuvvu matladina ventane avathali phone lo auto vinipisthundi - Phone call laaga")
+st.caption("Nuvvu matladina ventane avathali phone lo auto vinipisthundi")
 
-audio = st.audio_input("Mic nokki matladu, aapagane auto translate avuthundi", key="live_mic", label_visibility="collapsed")
+audio = st.audio_input("Mic nokki matladu", key="live_mic", label_visibility="collapsed")
 
 if audio:
     temp_path=f"room_data/{st.session_state.room}_{st.session_state.my_id}_{int(time.time())}.wav"
     with open(temp_path,"wb") as f: f.write(audio.getbuffer())
-    
-    with st.spinner(f"Translating... → Broadcasting to {st.session_state.room}"):
+    with st.spinner(f"Translating... → {st.session_state.room}"):
         try:
             with open(temp_path,"rb") as f:
                 stt_res = client.speech_to_text.transcribe(file=f, model="saaras:v3")
                 orig = getattr(stt_res, 'transcript', '') or str(stt_res)
-            
             if orig and len(orig.strip())>1:
                 st.info(f"You said: {orig}")
-                # Supabase Broadcast - Real-time for other phones
                 supabase.table("broadcasts").insert({
                     "room_id": st.session_state.room,
                     "sender_id": st.session_state.my_id,
@@ -183,7 +175,7 @@ if audio:
                     "src_lang": lang_map[st.session_state.my_speak],
                     "src_name": st.session_state.my_speak
                 }).execute()
-                st.success(f"✅ Sent to {st.session_state.room}! Vere phone lo 2 sec lo auto play avuthundi")
+                st.success(f"✅ Sent to {st.session_state.room}!")
             else:
                 st.warning("Voice clear ga ledu, malli try chey")
         except Exception as e:
@@ -191,38 +183,33 @@ if audio:
 
 st.divider()
 
-# --- LIVE INCOMING - SUPABASE REALTIME ---
+# FIX 4: LIVE INCOMING WITH TTS FALLBACK
 @st.fragment(run_every=1)
 def live_incoming():
     st.markdown(f"### 🔊 Live Incoming - {st.session_state.my_listen} lo")
-    st.caption("Auto refresh - vere phone matladithe 1 sec lo vastundi")
-    
+    st.caption("Auto refresh - 1 sec lo vastundi")
     try:
-        # Get latest message from other users in same room
-        res=supabase.table("broadcasts").select("*").eq("room_id", st.session_state.room).neq("sender_id", st.session_state.my_id).order("created_at", desc=True).limit(3).execute()
-        
+        res=supabase.table("broadcasts").select("*").eq("room_id", st.session_state.room).neq("sender_id", st.session_state.my_id).neq("sender_id","SYSTEM").order("created_at", desc=True).limit(2).execute()
         if not res.data:
             st.info(f"No messages yet in {st.session_state.room}. Vere phone same code tho join avvali.")
             return
-        
         for r in res.data:
-            if time.time() - 600 > 0: # we need timestamp parse, skip for now
-                pass
             orig_text=r["text"]
-            sender=r["sender_id"]
             tgt_code=lang_map[st.session_state.my_listen]
-            
             cache_audio=f"room_data/live_{st.session_state.room}_{st.session_state.my_id}_{r['id']}.wav"
             cache_txt=f"room_data/live_{st.session_state.room}_{st.session_state.my_id}_{r['id']}.txt"
-            
             if not os.path.exists(cache_audio):
                 try:
-                    # Auto detect + Translate
-                    trans_res = client.text.translate(input=orig_text, source_language_code="auto", target_language_code=tgt_code, model="mayura:v1")
+                    src_lang=r.get("src_lang","auto")
+                    if src_lang=="auto": src_lang="auto"
+                    trans_res = client.text.translate(input=orig_text, source_language_code=src_lang, target_language_code=tgt_code, model="mayura:v1")
                     translated = getattr(trans_res, 'translated_text', orig_text)
                     open(cache_txt,"w",encoding="utf-8").write(f"{orig_text} → {translated}")
-                    # TTS
-                    tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, model="bulbul:v3")
+                    # TTS FIX - try both param names
+                    try:
+                        tts_res = client.text_to_speech.convert(text=translated, target_language_code=tgt_code, model="bulbul:v3")
+                    except TypeError:
+                        tts_res = client.text_to_speech.convert(text=translated, language_code=tgt_code, model="bulbul:v3")
                     ab64 = tts_res.audios[0] if hasattr(tts_res,'audios') else None
                     if ab64:
                         data=base64.b64decode(ab64)
@@ -230,13 +217,11 @@ def live_incoming():
                 except Exception as e:
                     st.error(f"Translate error: {e}")
                     continue
-            
             if os.path.exists(cache_audio):
                 info=open(cache_txt,"r",encoding="utf-8").read() if os.path.exists(cache_txt) else orig_text
-                st.markdown(f"<div class='incoming-card'>👤 <b>{sender}:</b> {info}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='incoming-card'>👤 <b>{r['sender_id']}:</b> {info}</div>", unsafe_allow_html=True)
                 st.audio(cache_audio, autoplay=True)
-    
     except Exception as e:
-        st.error(f"Supabase error: {e} - Check URL/Key")
+        st.error(f"Supabase error: {e}")
 
 live_incoming()
