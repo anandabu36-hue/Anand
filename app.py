@@ -157,11 +157,10 @@ if audio:
                 # Supabase Broadcast - Real-time for other phones
                 supabase.table("broadcasts").insert({
                     "room_id": st.session_state.room,
-                    "room_code": st.session_state.room,
                     "sender_id": st.session_state.my_id,
                     "text": orig,
-                    "src_lang": "auto",
-                    "src_name": "Auto"
+                    "src_lang": lang_map[st.session_state.my_speak],
+                    "src_name": st.session_state.my_speak
                 }).execute()
                 st.success(f"✅ Sent to {st.session_state.room}! Vere phone lo 2 sec lo auto play avuthundi")
             else:
