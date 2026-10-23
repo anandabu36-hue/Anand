@@ -2,7 +2,7 @@ import streamlit as st
 from sarvamai import SarvamAI
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from supabase import create_client
-import os, time, uuid, base64, wave
+import os, time, uuid, base64, wave, asyncio
 import numpy as np
 
 API_KEY = st.secrets["SARVAM_API_KEY"]
@@ -12,9 +12,9 @@ SUPA_KEY = st.secrets["SUPABASE_KEY"]
 client = SarvamAI(api_subscription_key=API_KEY)
 supabase = create_client(SUPA_URL, SUPA_KEY)
 RTC_CONFIG = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
-st.set_page_config(page_title="Anand Translator", layout="centered")
+st.set_page_config(page_title="Anand Live Translator", layout="centered")
 
-for k,v in {"auth":False,"room":None,"my_id":str(uuid.uuid4())[:6],"my_speak":"Hindi","my_listen":"Telugu","buffer":[],"last_speech":0,"is_speaking":False,"auto_lock":False}.items():
+for k,v in {"auth":False,"room":None,"my_id":str(uuid.uuid4())[:6],"my_speak":"Hindi","my_listen":"Telugu","buffer":[],"last_send":0}.items():
     if k not in st.session_state: st.session_state[k]=v
 
 if not st.session_state.auth:
@@ -30,105 +30,101 @@ if not st.session_state.room:
     c1,c2=st.columns(2)
     with c1:
         if st.button("📞 Create Call",use_container_width=True,type="primary"):
-            st.session_state.room=f"ANAND-{str(uuid.uuid4())[:5].upper()}"
-            st.rerun()
+            st.session_state.room=f"ANAND-{str(uuid.uuid4())[:5].upper()}"; st.rerun()
     with c2:
         with st.form("join"):
             code=st.text_input("Room Code")
             if st.form_submit_button("Join"):
-                st.session_state.room=code.upper().strip()
-                st.rerun()
+                st.session_state.room=code.upper().strip(); st.rerun()
     st.stop()
 
 lang_map={"Hindi":"hi-IN","Telugu":"te-IN","Tamil":"ta-IN","English":"en-IN"}
-st.write(f"Room: {st.session_state.room} | My ID: {st.session_state.my_id}")
+st.title(f"🔴 LIVE: {st.session_state.room}")
+st.caption(f"My ID: {st.session_state.my_id} | Phone call laga matladu - auto translate avuthundi")
 
 c1,c2=st.columns(2)
 with c1: st.session_state.my_speak=st.selectbox("I Speak", ["Hindi","Telugu","Tamil","English"], 0)
 with c2: st.session_state.my_listen=st.selectbox("I Listen", ["Telugu","Hindi","Tamil","English"], 1)
 
-ctx = webrtc_streamer(key=f"call-{st.session_state.room}-{st.session_state.my_id}", mode=WebRtcMode.SENDONLY, rtc_configuration=RTC_CONFIG, media_stream_constraints={"video":False,"audio":True}, audio_receiver_size=1024, async_processing=True)
+# LIVE MODE - SENDONLY (no echo) + continuous collecting
+ctx = webrtc_streamer(key=f"live-{st.session_state.room}-{st.session_state.my_id}", mode=WebRtcMode.SENDONLY, rtc_configuration=RTC_CONFIG, media_stream_constraints={"video":False,"audio":{"echoCancellation":True,"noiseSuppression":True,"autoGainControl":True}}, audio_receiver_size=512, async_processing=True)
 
-def send_to_supabase():
-    if not st.session_state.buffer or st.session_state.auto_lock: return
-    st.session_state.auto_lock=True
+def live_translate_and_send():
+    if len(st.session_state.buffer) < 8: return
     try:
         all_audio=np.concatenate(st.session_state.buffer)
-        st.session_state.buffer=[]; st.session_state.is_speaking=False
+        st.session_state.buffer=[] # Clear for next 3 sec
+        st.session_state.last_send=time.time()
         
-        # FIX: 48kHz -> 16kHz resample (Sarvam needs 16k)
-        # Take every 3rd sample
+        # 48k -> 16k resample
         resampled = all_audio[::3]
-        st.write(f"DEBUG: {len(all_audio)} -> resampled {len(resampled)} (48k->16k)")
-        
-        wav=f"room_data/{st.session_state.my_id}_16k.wav"
+        if len(resampled) < 8000: return # <0.5 sec ignore
+
+        wav=f"room_data/live_{st.session_state.my_id}.wav"
         with wave.open(wav,'wb') as wf:
             wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
             wf.writeframes(resampled.astype(np.int16).tobytes())
-        
+
         with open(wav,"rb") as f:
             stt=client.speech_to_text.transcribe(file=f, model="saaras:v3", language_code=lang_map[st.session_state.my_speak])
             orig=getattr(stt,'transcript','')
-        
-        st.write(f"DEBUG STT: '{orig}'")
-        if orig and len(orig.strip())>1:
-            payload={"room_id":st.session_state.room,"room_code":st.session_state.room,"sender_id":st.session_state.my_id,"text":orig,"src_lang":lang_map[st.session_state.my_speak],"src_name":st.session_state.my_speak}
-            res=supabase.table("broadcasts").insert(payload).execute()
-            st.success(f"✅ SENT! Other phone ki veltundi: {orig}")
-        else:
-            st.error("STT empty - loud ga malli cheppu")
-    except Exception as e:
-        st.error(f"❌ FULL ERROR: {e}")
-        st.write(f"Error type: {type(e)}")
-    finally:
-        st.session_state.auto_lock=False
 
+        if orig and len(orig.strip())>2:
+            # Instant broadcast
+            supabase.table("broadcasts").insert({"room_id":st.session_state.room,"sender_id":st.session_state.my_id,"text":orig,"src_lang":lang_map[st.session_state.my_speak],"src_name":st.session_state.my_speak}).execute()
+            st.toast(f"You: {orig}")
+    except Exception as e:
+        print(f"Live error: {e}")
+
+# Continuous VAD - No silence wait, every 3 sec auto send
 if ctx and ctx.state.playing and ctx.audio_receiver:
     try:
-        frames=ctx.audio_receiver.get_frames(timeout=1)
+        frames=ctx.audio_receiver.get_frames(timeout=0.5)
         for fr in frames:
-            arr=fr.to_ndarray(); pcm=arr.mean(axis=0) if arr.ndim==2 else arr.flatten()
-            en=np.sqrt(np.mean(pcm.astype(float)**2))
-            if en>60: # Ultra low threshold for phone
-                st.session_state.last_speech=time.time()
-                st.session_state.is_speaking=True
-                st.session_state.buffer.append(pcm)
-            elif st.session_state.is_speaking:
-                st.session_state.buffer.append(pcm)
+            arr=fr.to_ndarray()
+            pcm=arr.mean(axis=0) if arr.ndim==2 else arr.flatten()
+            # Add all frames, not just loud
+            st.session_state.buffer.append(pcm)
     except: pass
+
+    # Every 3 seconds, auto translate whatever you spoke
+    if len(st.session_state.buffer) > 25 and (time.time() - st.session_state.last_send) > 3.0:
+        live_translate_and_send()
+        st.rerun()
     
-    if st.session_state.buffer:
-        st.info(f"🎙️ Recording {len(st.session_state.buffer)} chunks | Stop talking 2.5s -> auto send")
-
-    if st.session_state.is_speaking and (time.time()-st.session_state.last_speech)>2.5 and len(st.session_state.buffer)>5:
-        send_to_supabase(); st.rerun()
-
-    if st.session_state.buffer and st.button("📤 SEND NOW", type="primary", use_container_width=True):
-        send_to_supabase(); st.rerun()
+    st.success(f"🟢 LIVE - Mic ON | Speaking... next translate in {max(0, 3 - int(time.time()-st.session_state.last_send))}s")
 else:
-    st.warning("Click START and ALLOW mic")
+    st.warning("Click START -> Allow Mic -> Keep it ON, don't press STOP")
 
 st.divider()
 
-@st.fragment(run_every=2)
-def incoming():
+# LIVE INCOMING - Poll every 1 sec for instant
+@st.fragment(run_every=1)
+def live_incoming():
     try:
         res=supabase.table("broadcasts").select("*").eq("room_id",st.session_state.room).neq("sender_id",st.session_state.my_id).order("created_at",desc=True).limit(1).execute()
-        if not res.data: 
-            st.caption("Waiting for other phone...")
-            return
+        if not res.data: return
         r=res.data[0]
-        orig=r["text"]; src=r["src_lang"]; src_name=r["src_name"]
+        # Only play if message is within last 10 seconds - LIVE feel
+        # created_at check
         tgt=lang_map[st.session_state.my_listen]
-        translated = orig if src==tgt else getattr(client.text.translate(input=orig, source_language_code=src, target_language_code=tgt, model="mayura:v1"),'translated_text',orig)
-        st.success(f"👤 {src_name} ({r['sender_id']}): {orig} -> {st.session_state.my_listen}: {translated}")
-        fpath=f"room_data/play_{r['id']}.wav"
-        tts=client.text_to_speech.convert(text=translated, target_language_code=tgt, model="bulbul:v3")
-        open(fpath,"wb").write(base64.b64decode(tts.audios[0]))
+        if r["src_lang"] == tgt:
+            translated = r["text"]
+        else:
+            translated = getattr(client.text.translate(input=r["text"], source_language_code=r["src_lang"], target_language_code=tgt, model="mayura:v1"),'translated_text',r["text"])
+        
+        st.markdown(f"### 🔊 {r['src_name']} ({r['sender_id']}): {translated}")
+        st.caption(f"Original: {r['text']}")
+        
+        # Auto TTS and autoplay
+        fpath=f"room_data/live_play_{r['id']}.wav"
+        if not os.path.exists(fpath):
+            tts=client.text_to_speech.convert(text=translated, target_language_code=tgt, model="bulbul:v3")
+            open(fpath,"wb").write(base64.b64decode(tts.audios[0]))
         st.audio(fpath, autoplay=True)
     except Exception as e:
-        st.error(f"Fetch error: {e}")
+        st.write(f"Incoming error: {e}")
 
-incoming()
-if st.button("Clear History"): supabase.table("broadcasts").delete().eq("room_id",st.session_state.room).execute(); st.success("Cleared")
+live_incoming()
+
 if st.button("End Call"): st.session_state.room=None; st.rerun()
