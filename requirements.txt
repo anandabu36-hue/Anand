@@ -1,8 +1,6 @@
-streamlit==1.38.0
-streamlit-webrtc==0.63.0
-aiortc==1.8.0
-aioice==0.9.0
-sarvamai==0.1.37
-supabase==2.3.0
-numpy==1.26.4
-av==13.0.0
+streamlit
+streamlit-webrtc
+sarvamai
+supabase
+numpy
+av
