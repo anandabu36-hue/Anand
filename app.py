@@ -50,18 +50,11 @@ c1,c2=st.columns(2)
 with c1: st.session_state.my_speak=st.selectbox("I Speak", ["Hindi","Telugu","Tamil","English"], 0)
 with c2: st.session_state.my_listen=st.selectbox("I Listen", ["Telugu","Hindi","Tamil","English"], 1)
 
-# FIX: SENDONLY - mic echo 100% pothundi
-ctx = webrtc_streamer(
-    key=f"call-{st.session_state.room}-{st.session_state.my_id}", 
-    mode=WebRtcMode.SENDONLY, 
-    rtc_configuration=RTC_CONFIG, 
-    media_stream_constraints={"video":False,"audio":True}, 
-    audio_receiver_size=4096, 
-    async_processing=True
-)
+ctx = webrtc_streamer(key=f"call-{st.session_state.room}-{st.session_state.my_id}", mode=WebRtcMode.SENDONLY, rtc_configuration=RTC_CONFIG, media_stream_constraints={"video":False,"audio":True}, audio_receiver_size=4096, async_processing=True)
 
 def process_buffer():
-    if st.session_state.auto_lock or len(st.session_state.buffer)<10: return
+    if st.session_state.auto_lock or len(st.session_state.buffer)<10: 
+        return
     st.session_state.auto_lock=True
     try:
         all_audio=np.concatenate(st.session_state.buffer)
@@ -73,10 +66,17 @@ def process_buffer():
         with open(wav,"rb") as f:
             stt=client.speech_to_text.transcribe(file=f, model="saaras:v3", language_code=lang_map[st.session_state.my_speak])
             orig=getattr(stt,'transcript','')
+        st.write(f"DEBUG STT: {orig}")  # DEBUG
         if orig and len(orig.strip())>1:
-            supabase.table("broadcasts").insert({"room_id":st.session_state.room,"sender_id":st.session_state.my_id,"text":orig,"src_lang":lang_map[st.session_state.my_speak],"src_name":st.session_state.my_speak}).execute()
-            st.toast(f"Sent: {orig}")
-    except Exception as e: st.error(f"{e}")
+            # INSERT with BOTH room_id and room_code to avoid error
+            payload={"room_id":st.session_state.room,"room_code":st.session_state.room,"sender_id":st.session_state.my_id,"text":orig,"src_lang":lang_map[st.session_state.my_speak],"src_name":st.session_state.my_speak}
+            res=supabase.table("broadcasts").insert(payload).execute()
+            st.success(f"✅ Supabase Sent! ID: {res.data}")
+            st.toast(f"Sent to {st.session_state.room}")
+        else:
+            st.warning("STT empty - malli matladu loud ga")
+    except Exception as e: 
+        st.error(f"SEND ERROR: {e}")
     finally: st.session_state.auto_lock=False
 
 if ctx and ctx.state.playing and ctx.audio_receiver:
@@ -85,42 +85,54 @@ if ctx and ctx.state.playing and ctx.audio_receiver:
         for fr in frames:
             arr=fr.to_ndarray(); pcm=arr.mean(axis=0) if arr.ndim==2 else arr.flatten()
             en=np.sqrt(np.mean(pcm.astype(float)**2))
-            if en>350:
+            # DEBUG energy
+            if en>250:
                 st.session_state.last_speech=time.time(); st.session_state.is_speaking=True
                 st.session_state.buffer.append(pcm)
             elif st.session_state.is_speaking:
                 st.session_state.buffer.append(pcm)
     except: pass
-    if st.session_state.is_speaking and (time.time()-st.session_state.last_speech)>2.0 and len(st.session_state.buffer)>15:
+    # Show buffer status
+    if st.session_state.buffer:
+        st.caption(f"🎙️ Recording... buffer {len(st.session_state.buffer)} | Energy collecting")
+    if st.session_state.is_speaking and (time.time()-st.session_state.last_speech)>2.0 and len(st.session_state.buffer)>10:
         process_buffer(); st.rerun()
 
 st.divider()
 
 @st.fragment(run_every=2)
 def incoming():
-    st.write(f"Incoming ({st.session_state.my_listen}) - Other phone nundi matrame vastundi")
+    st.write(f"Incoming ({st.session_state.my_listen})")
     try:
-        # Nee ID thappa vere valladi matrame teeskuntundi
+        # Show all rows for this room for DEBUG
+        all_res=supabase.table("broadcasts").select("*").eq("room_id",st.session_state.room).order("created_at",desc=True).limit(5).execute()
+        if all_res.data:
+            st.caption(f"DEBUG - Room lo total {len(all_res.data)} messages unnayi:")
+            for r in all_res.data:
+                st.text(f"{r['sender_id']} ({'YOU' if r['sender_id']==st.session_state.my_id else 'OTHER'}): {r['text'][:30]}")
+
         res=supabase.table("broadcasts").select("*").eq("room_id",st.session_state.room).neq("sender_id",st.session_state.my_id).order("created_at",desc=True).limit(1).execute()
         if not res.data:
-            st.caption("Waiting for other phone... same room code lo vere phone join avvali")
+            st.caption("Waiting for other phone message...")
             return
         r=res.data[0]
-        # Double check - naa ID ayithe skip
-        if r["sender_id"]==st.session_state.my_id:
-            return
+        if r["sender_id"]==st.session_state.my_id: return
         orig=r["text"]; src=r["src_lang"]; src_name=r["src_name"]
         tgt=lang_map[st.session_state.my_listen]
         translated = orig if src==tgt else getattr(client.text.translate(input=orig, source_language_code=src, target_language_code=tgt, model="mayura:v1"),'translated_text',orig)
-        st.success(f"{src_name} -> {st.session_state.my_listen}: {translated} (From: {r['sender_id']})")
-        fpath=f"room_data/from_{r['sender_id']}_to_{st.session_state.my_id}.wav"
-        if not os.path.exists(fpath) or True:
+        st.success(f"👤 {src_name} ({r['sender_id']}): {orig} -> {st.session_state.my_listen}: {translated}")
+        fpath=f"room_data/from_{r['id']}.wav"
+        if True:
             tts=client.text_to_speech.convert(text=translated, target_language_code=tgt, model="bulbul:v3")
             open(fpath,"wb").write(base64.b64decode(tts.audios[0]))
         st.audio(fpath, autoplay=True)
     except Exception as e:
-        st.error(f"{e}")
+        st.error(f"FETCH ERROR: {e} - Supabase table lo room_id, room_code rendu unda check chey")
 
 incoming()
+
+if st.button("Clear Chat History (Supabase)"):
+    supabase.table("broadcasts").delete().eq("room_id",st.session_state.room).execute()
+    st.success("Cleared!")
 
 if st.button("End Call"): st.session_state.room=None; st.rerun()
