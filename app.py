@@ -34,27 +34,48 @@ os.makedirs("room_data", exist_ok=True)
 
 # --- ROOM SELECTION ---
 if not st.session_state.room:
-    st.markdown("""
-    <div style='background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:24px;padding:24px;color:white;text-align:center'>
-    <h2>📞 Anand Translator</h2>
-    <p>Level 2 - Real Phone Call UI</p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.write("")
+    st.markdown("<h2 style='text-align:center'>📞 Anand Translator</h2>", unsafe_allow_html=True)
     c1,c2=st.columns(2)
     with c1:
         if st.button("📞 Create Call", use_container_width=True, type="primary"):
-            st.session_state.room=f"ANAND-{str(uuid.uuid4())[:5].upper()}"
+            new_code=f"ANAND-{str(uuid.uuid4())[:5].upper()}"
+            st.session_state.room=new_code
             st.session_state.call_start=time.time()
+            # Create room marker in Supabase - so others can find it
+            try:
+                supabase.table("broadcasts").insert({
+                    "room_id": new_code,
+                    "sender_id": "SYSTEM",
+                    "text": f"Room {new_code} created",
+                    "src_lang": "en-IN",
+                    "src_name": "System"
+                }).execute()
+            except: pass
             st.rerun()
     with c2:
         with st.form("join_form"):
-            code=st.text_input("Room Code (Ex: ANAND-XXXXX)")
-            if st.form_submit_button("Join Call", use_container_width=True):
-                st.session_state.room=code.upper().strip()
-                st.session_state.call_start=time.time()
-                st.rerun()
-    st.info("Create chesi code ni vere phone ki share chey")
+            code=st.text_input("Room Code (ANAND-XXXXX)")
+            submitted=st.form_submit_button("Join Call", use_container_width=True)
+            if submitted:
+                rc=code.upper().strip().replace(" ","")
+                # Validation: ANAND- format lo undala
+                if not rc.startswith("ANAND-") or len(rc)<9:
+                    st.error("❌ Invalid code! Format: ANAND-XXXXX")
+                else:
+                    # Check if room exists in Supabase
+                    try:
+                        res=supabase.table("broadcasts").select("room_id").eq("room_id", rc).limit(1).execute()
+                        if not res.data:
+                            st.error(f"❌ Room {rc} Not Found! Create chesi malli try chey")
+                        else:
+                            st.session_state.room=rc
+                            st.session_state.call_start=time.time()
+                            st.rerun()
+                    except Exception as e:
+                        # If Supabase error, allow but warn
+                        st.session_state.room=rc
+                        st.session_state.call_start=time.time()
+                        st.rerun()
     st.stop()
 
 # --- REAL PHONE UI CSS ---
