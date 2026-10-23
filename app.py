@@ -723,6 +723,11 @@ def auto_incoming():
                 payload,
                 target_code,
             )
+            st.write("Original speech:", payload["text"])
+            st.write("Selected language:", st.session_state.my_listen)
+            st.write("Target language code:", target_code)
+            st.write("Translated text:", translated)
+            st.write("Generated audio:", audio_path)
 
             st.markdown(
                 f"**Translation ({st.session_state.my_listen}):**"
