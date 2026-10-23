@@ -1,4 +1,5 @@
 streamlit
 sarvamai
-supabase
+streamlit-webrtc
+av
 numpy
