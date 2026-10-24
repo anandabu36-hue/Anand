@@ -1,5 +1,5 @@
-streamlit
-streamlit-webrtc
+streamlit>=1.37
+streamlit-webrtc>=0.47
 sarvamai
-numpy
 supabase
+numpy
