@@ -1,4 +1,3 @@
-```python
 import base64
 import html
 import os
@@ -663,4 +662,3 @@ st.warning(
     "After translation, press ▶ to play the generated audio. "
     "Use only test data until room-level database security is added."
 )
-```
