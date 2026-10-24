@@ -297,8 +297,7 @@ def get_messages():
     )
 
     return result.data or []
-```
-```python
+    
 st.markdown(
     """<div style="background:linear-gradient(135deg,#667eea,#764ba2);
     padding:22px;border-radius:18px;color:white;text-align:center">
