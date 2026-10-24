@@ -76,6 +76,31 @@ if app_password and not st.session_state.auth:
 st.session_state.auth = True
 
 
+
+def create_room_in_database(room_code):
+    """Register a room so Join Call can validate that it really exists."""
+    result = supabase.table("call_rooms").insert({
+        "room_code": room_code,
+        "created_by": st.session_state.my_id,
+        "is_active": True,
+    }).execute()
+    return bool(result.data)
+
+
+def room_exists(room_code):
+    """Only allow joining a room that was registered and is still active."""
+    result = (
+        supabase.table("call_rooms")
+        .select("room_code,is_active")
+        .eq("room_code", room_code)
+        .eq("is_active", True)
+        .limit(1)
+        .execute()
+    )
+    return bool(result.data)
+
+
+
 def transcribe_audio(wav_path):
     with open(wav_path, "rb") as audio_file:
         response = sarvam.speech_to_text.transcribe(
@@ -197,21 +222,37 @@ if not st.session_state.room:
     left, right = st.columns(2)
     with left:
         if st.button("📞 Create Call", type="primary", use_container_width=True):
-            st.session_state.room = "ANAND-" + uuid.uuid4().hex[:6].upper()
-            st.session_state.call_start = time.time()
-            st.session_state.last_message_id = 0
-            st.rerun()
-    with right:
-        with st.form("join_room"):
-            room_code = st.text_input("Room code").strip().upper()
-            if st.form_submit_button("Join Call", use_container_width=True):
-                if room_code:
-                    st.session_state.room = room_code
+            new_room_code = "ANAND-" + uuid.uuid4().hex[:6].upper()
+            try:
+                if create_room_in_database(new_room_code):
+                    st.session_state.room = new_room_code
                     st.session_state.call_start = time.time()
                     st.session_state.last_message_id = 0
                     st.rerun()
                 else:
+                    st.error("Room create కాలేదు. మళ్లీ ప్రయత్నించండి.")
+            except Exception as exc:
+                st.error("Supabase room create failed: " + str(exc))
+                st.info("Supabaseలో call_rooms table మరియు policies create చేశారా అని చెక్ చేయండి.")
+    with right:
+        with st.form("join_room"):
+            room_code = st.text_input("Room code").strip().upper()
+            if st.form_submit_button("Join Call", use_container_width=True):
+                if not room_code:
                     st.warning("Enter a room code.")
+                else:
+                    try:
+                        if room_exists(room_code):
+                            st.session_state.room = room_code
+                            st.session_state.call_start = time.time()
+                            st.session_state.last_message_id = 0
+                            st.session_state.played_audio = []
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid Room Code లేదా ఈ call ఇప్పటికే close అయింది.")
+                    except Exception as exc:
+                        st.error("Room validation failed: " + str(exc))
+                        st.info("Supabaseలో call_rooms table మరియు SELECT policy create చేశారా అని చెక్ చేయండి.")
     st.info("Share the room code with the other participant. Both participants must use the same deployed app.")
     st.stop()
 
@@ -324,6 +365,12 @@ with col1:
         st.rerun()
 with col2:
     if st.button("📞 End Call", type="primary", use_container_width=True):
+        try:
+            supabase.table("call_rooms").update({"is_active": False}).eq(
+                "room_code", st.session_state.room
+            ).execute()
+        except Exception as exc:
+            st.warning("Call ended on this device, but room status could not be updated: " + str(exc))
         st.session_state.room = None
         st.session_state.buffer = []
         st.session_state.is_speaking = False
