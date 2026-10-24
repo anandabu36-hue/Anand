@@ -13,6 +13,7 @@ import glob
 import wave
 import json
 import threading
+import html
 import numpy as np
 
 # =========================================================
@@ -251,26 +252,35 @@ def process_buffer():
         st.session_state.auto_lock = False
 
 
-def translate_text(text, target_language):
-    """
-    Translate recognized speech into the receiver's language.
-    """
+def translate_text(text, target_language, source_language=None):
+    """Translate recognized speech into the receiver's selected language."""
+    # Use the speech recognizer's detected language when available.
+    # Fall back to automatic detection if it is missing/unsupported.
+    supported_source_codes = set(LANGUAGES.values())
+    source_code = (
+        source_language
+        if isinstance(source_language, str)
+        and source_language in supported_source_codes
+        and source_language != target_language
+        else "auto"
+    )
+
     response = client.text.translate(
-        input=text,
-        source_language_code="auto",
+        input=text.strip(),
+        source_language_code=source_code,
         target_language_code=target_language,
         model="mayura:v1",
     )
 
-    translated = getattr(
-        response,
-        "translated_text",
-        None,
-    )
+    translated = getattr(response, "translated_text", None)
+    if not translated and isinstance(response, dict):
+        translated = response.get("translated_text")
 
     if not isinstance(translated, str) or not translated.strip():
         raise ValueError(
-            "Translation API returned empty text."
+            "Translation API returned no translated_text. "
+            f"Response type: {type(response).__name__}; "
+            f"source={source_code}; target={target_language}."
         )
 
     return translated.strip()
@@ -325,6 +335,7 @@ def translate_and_generate(payload, target_language):
     translated = translate_text(
         payload["text"],
         target_language,
+        payload.get("source_language"),
     )
 
     # Generate audio before marking the translation complete.
@@ -711,7 +722,7 @@ def auto_incoming():
                 <br>
                 <small>Original speech</small>
                 <br>
-                {payload["text"]}
+                {html.escape(str(payload["text"]))}
             </div>
             """,
             unsafe_allow_html=True,
